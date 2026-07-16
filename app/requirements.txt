@@ -1,0 +1,9 @@
+# Backend web
+flask>=3.0
+
+# Motor NLP (modelos BETO ya entrenados en pesos/)
+# En Windows/CPU, torch se instala desde el índice oficial de PyTorch:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.40
+safetensors>=0.4

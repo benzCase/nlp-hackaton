@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: oklch(98% 0.006 95); font-family: 'Inter', Helvetica, Arial, sans-serif; color: oklch(20% 0.02 260); }
+    a { color: oklch(52% 0.15 220); }
+    a:hover { color: oklch(40% 0.15 220); }
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: oklch(85% 0.01 260); border-radius: 4px; }
+    select, input, textarea { font-family: inherit; }
+  </style>
+</helmet>
+
+<div style="min-height:100vh; display:flex; flex-direction:column;">
+
+  <header style="display:flex; align-items:center; justify-content:space-between; padding:14px 32px; background:white; border-bottom:1px solid oklch(90% 0.01 260); position:sticky; top:0; z-index:20;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:36px; height:36px; border-radius:9px; background:oklch(52% 0.15 220); display:flex; align-items:center; justify-content:center;">
+        <div style="width:14px; height:14px; border-radius:3px; background:oklch(68% 0.19 45);"></div>
+      </div>
+      <div style="font-family:'Poppins'; font-weight:700; font-size:18px; letter-spacing:-0.01em;">Municipalidad Digital</div>
+    </div>
+    <sc-if value="{{ authUser }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div style="text-align:right;">
+          <div style="font-size:13px; font-weight:600;">{{ authUser.nombre }}</div>
+          <div style="font-size:11px; color:oklch(55% 0.02 260);">{{ authUserRoleLabel }} · DNI {{ authUser.dni }}</div>
+        </div>
+        <button onClick="{{ onLogout }}" style="background:none; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:8px 14px; font-size:12.5px; font-weight:600; color:oklch(45% 0.02 260); cursor:pointer;">Cerrar sesión</button>
+      </div>
+      <div slot="else"></div>
+    </sc-if>
+  </header>
+
+  <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+    <main style="flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px;">
+      <div style="width:100%; max-width:420px; background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:36px;">
+        <div style="font-family:'Poppins'; font-weight:800; font-size:22px; margin-bottom:6px;">Iniciar sesión</div>
+        <div style="color:oklch(45% 0.02 260); font-size:13.5px; margin-bottom:24px;">Accede como ciudadano para reportar incidentes, o como administrador para gestionar los reportes municipales.</div>
+
+        <div style="display:flex; background:oklch(96% 0.006 95); border-radius:10px; padding:4px; gap:2px; margin-bottom:20px;">
+          <button onClick="{{ selectRoleCiudadano }}" style="{{ roleBtnCiudadanoStyle }}">Ciudadano</button>
+          <button onClick="{{ selectRoleAdmin }}" style="{{ roleBtnAdminStyle }}">Administrador</button>
+        </div>
+
+        <div style="margin-bottom:18px;">
+          <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">DNI</label>
+          <input value="{{ loginDni }}" onChange="{{ onLoginDniChange }}" placeholder="{{ loginDniPlaceholder }}" maxlength="8" style="width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 12px; font-size:13px; letter-spacing:0.04em;" />
+        </div>
+
+        <button onClick="{{ onLoginSubmit }}" disabled="{{ loginDisabled }}" style="{{ loginBtnStyle }}">Ingresar</button>
+        <div style="font-size:11.5px; color:oklch(58% 0.02 260); margin-top:14px; text-align:center;">Prototipo de demostración — solo se valida el formato del DNI (8 dígitos).</div>
+      </div>
+    </main>
+    <div slot="else"></div>
+  </sc-if>
+
+  <sc-if value="{{ isCiudadano }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex; justify-content:center; gap:6px; background:white; border-bottom:1px solid oklch(90% 0.01 260); padding:0 24px;">
+      <button onClick="{{ goNuevo }}" style="{{ citTabNuevoStyle }}">Nuevo reporte</button>
+      <button onClick="{{ goMisSolicitudes }}" style="{{ citTabMisStyle }}">Mis solicitudes</button>
+    </div>
+
+    <main style="flex:1; display:flex; justify-content:center; padding:40px 20px 80px;">
+
+      <sc-if value="{{ citizenSelectedTicket }}" hint-placeholder-val="{{ false }}">
+        <div style="width:100%; max-width:900px;">
+          <button onClick="{{ closeDetail }}" style="background:none; border:none; color:oklch(52% 0.15 220); font-size:13px; font-weight:600; cursor:pointer; padding:0 0 16px; display:flex; align-items:center; gap:4px;">← Volver a mis solicitudes</button>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+            <div>
+              <div style="font-family:'Poppins'; font-weight:700; font-size:22px;">{{ citizenSelectedTicket.codigo }}</div>
+              <div style="font-size:13px; color:oklch(45% 0.02 260);">Registrado el {{ citizenSelectedTicket.fechaFmt }}</div>
+            </div>
+            <div style="display:inline-flex; padding:6px 14px; border-radius:14px; background:{{ citizenSelectedTicket.estadoBg }}; color:{{ citizenSelectedTicket.estadoColor }}; font-weight:700; font-size:13px;">{{ citizenSelectedTicket.estado }}</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:20px;">
+            <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:24px;">
+              <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:16px;">Datos del reporte</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; font-size:13px; margin-bottom:18px;">
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Sector</div><div style="font-weight:600;">{{ citizenSelectedTicket.sector }}</div></div>
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ubicación</div><div style="font-weight:600;">{{ citizenSelectedTicket.ubicacion }}</div></div>
+              </div>
+              <div style="color:oklch(55% 0.02 260); font-size:13px; margin-bottom:4px;">Descripción del incidente</div>
+              <div style="background:oklch(97% 0.005 95); border-radius:10px; padding:14px; font-size:13px; line-height:1.5;">{{ citizenSelectedTicket.descripcion }}</div>
+              <div style="margin-top:16px; color:oklch(55% 0.02 260); font-size:13px; margin-bottom:6px;">Evidencia adjunta</div>
+              <div style="border:1.5px dashed oklch(85% 0.01 260); border-radius:10px; padding:16px; font-size:12px; color:oklch(55% 0.02 260); font-family:monospace; text-align:center;">{{ citizenSelectedTicket.evidenciaLabel }}</div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación NLP</div>
+                <div style="display:flex; gap:10px;">
+                  <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Gravedad</div>
+                    <div style="display:inline-flex; padding:4px 10px; border-radius:14px; background:{{ citizenSelectedTicket.gravedadBg }}; color:{{ citizenSelectedTicket.gravedadColor }}; font-weight:700; font-size:12px;">{{ citizenSelectedTicket.gravedad }}</div>
+                  </div>
+                  <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Área derivada</div>
+                    <div style="font-weight:600; font-size:12px;">{{ citizenSelectedTicket.area }}</div>
+                  </div>
+                </div>
+              </div>
+              <div style="background:oklch(96% 0.03 220); border:1px solid oklch(90% 0.05 220); border-radius:16px; padding:22px;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(40% 0.12 220); margin-bottom:12px;">Contacto de seguimiento</div>
+                <div style="font-size:12.5px; color:oklch(35% 0.05 220); margin-bottom:10px;">El área <strong>{{ citizenSelectedTicket.area }}</strong> está a cargo de tu solicitud. Puedes comunicarte por estos medios para conocer el avance.</div>
+                <div style="font-size:13px; margin-bottom:6px;"><span style="color:oklch(45% 0.02 260);">Correo:</span> <strong>{{ citizenSelectedTicket.contactoCorreo }}</strong></div>
+                <div style="font-size:13px;"><span style="color:oklch(45% 0.02 260);">Teléfono:</span> <strong>{{ citizenSelectedTicket.contactoTelefono }}</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div slot="else"></div>
+      </sc-if>
+
+      <sc-if value="{{ showCitNuevo }}" hint-placeholder-val="{{ true }}">
+      <sc-if value="{{ formDone }}" hint-placeholder-val="{{ false }}">
+        <div style="width:100%; max-width:620px; background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:40px; text-align:center;">
+          <div style="width:56px; height:56px; border-radius:50%; background:oklch(94% 0.05 145); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;">
+            <div style="width:22px; height:22px; border-radius:50%; background:oklch(60% 0.15 145);"></div>
+          </div>
+          <div style="font-family:'Poppins'; font-weight:700; font-size:22px; margin-bottom:6px;">Reporte registrado</div>
+          <div style="color:oklch(45% 0.02 260); font-size:14px; margin-bottom:24px;">Tu código de seguimiento es</div>
+          <div style="font-family:'Poppins'; font-weight:800; font-size:28px; color:oklch(52% 0.15 220); letter-spacing:0.02em; margin-bottom:28px;">{{ ticketCode }}</div>
+
+          <div style="background:oklch(97% 0.005 95); border-radius:14px; padding:20px; text-align:left; margin-bottom:8px;">
+            <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación automática (NLP)</div>
+            <div style="display:flex; gap:24px; margin-bottom:16px;">
+              <div style="flex:1;">
+                <div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Gravedad</div>
+                <div style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; background:{{ analysisGravedadBg }}; color:{{ analysisGravedadColor }}; font-weight:700; font-size:13px;">{{ analysisGravedad }}</div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Área asignada</div>
+                <div style="font-weight:600; font-size:13px;">{{ analysisArea }}</div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Confianza del modelo</div>
+                <div style="font-weight:600; font-size:13px;">{{ analysisConfidence }}%</div>
+              </div>
+            </div>
+            <div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:8px;">Palabras clave detectadas</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <sc-for list="{{ analysisKeywords }}" as="kw" hint-placeholder-count="3">
+                <span style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:4px 10px; font-size:12px; color:oklch(35% 0.02 260);">{{ kw }}</span>
+              </sc-for>
+            </div>
+          </div>
+
+          <button onClick="{{ resetForm }}" style="margin-top:24px; background:oklch(52% 0.15 220); color:white; border:none; border-radius:10px; padding:13px 22px; font-size:14px; font-weight:600; cursor:pointer; width:100%;">Registrar otro reporte</button>
+        </div>
+        <div slot="else"></div>
+      </sc-if>
+
+      <sc-if value="{{ formNotDone }}" hint-placeholder-val="{{ true }}">
+      <div style="width:100%; max-width:640px;">
+        <div style="margin-bottom:24px;">
+          <div style="font-family:'Poppins'; font-weight:800; font-size:26px; margin-bottom:6px;">Reportar un incidente</div>
+          <div style="color:oklch(45% 0.02 260); font-size:14px;">Describe lo ocurrido con tus palabras — un sistema de análisis de lenguaje clasifica automáticamente la gravedad y el área responsable.</div>
+        </div>
+
+        <div style="background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:32px; display:flex; flex-direction:column; gap:26px;">
+
+          <div>
+            <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Ubicación del incidente</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Departamento</label>
+                <select value="{{ f_departamento }}" onChange="{{ onDepartamentoChange }}" style="{{ selectStyle }}">
+                  <option value="">Seleccionar</option>
+                  <sc-for list="{{ departamentoOptions }}" as="d" hint-placeholder-count="6">
+                    <option value="{{ d }}">{{ d }}</option>
+                  </sc-for>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Provincia</label>
+                <select value="{{ f_provincia }}" onChange="{{ onProvinciaChange }}" style="{{ selectStyle }}">
+                  <option value="">Seleccionar</option>
+                  <sc-for list="{{ provinciaOptions }}" as="p" hint-placeholder-count="2">
+                    <option value="{{ p }}">{{ p }}</option>
+                  </sc-for>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Distrito</label>
+                <select value="{{ f_distrito }}" onChange="{{ onDistritoChange }}" style="{{ selectStyle }}">
+                  <option value="">Seleccionar</option>
+                  <sc-for list="{{ distritoOptions }}" as="dt" hint-placeholder-count="2">
+                    <option value="{{ dt }}">{{ dt }}</option>
+                  </sc-for>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Datos de contacto</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Nombres y apellidos</label>
+                <input value="{{ f_nombres }}" onChange="{{ onNombresChange }}" placeholder="Ej. María Torres Quispe" style="{{ inputStyle }}" />
+              </div>
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Sector</label>
+                <select value="{{ f_sector }}" onChange="{{ onSectorChange }}" style="{{ selectStyle }}">
+                  <option value="">Seleccionar</option>
+                  <sc-for list="{{ sectorOptions }}" as="s" hint-placeholder-count="3">
+                    <option value="{{ s }}">{{ s }}</option>
+                  </sc-for>
+                </select>
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Correo electrónico</label>
+                <input value="{{ f_correo }}" onChange="{{ onCorreoChange }}" placeholder="nombre@correo.com" style="{{ inputStyle }}" />
+              </div>
+              <div>
+                <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Celular</label>
+                <input value="{{ f_celular }}" onChange="{{ onCelularChange }}" placeholder="9XXXXXXXX" style="{{ inputStyle }}" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+              <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220);">Descripción del incidente</div>
+              <div style="font-size:11px; color:oklch(60% 0.02 260);">{{ descCount }}/500</div>
+            </div>
+            <textarea value="{{ f_descripcion }}" onChange="{{ onDescripcionChange }}" placeholder="Describe qué ocurrió, dónde y cuándo. Este texto es analizado automáticamente para asignar gravedad y área." style="width:100%; min-height:110px; border:1px solid oklch(88% 0.01 260); border-radius:10px; padding:12px 14px; font-size:14px; resize:vertical; outline:none;"></textarea>
+            <div style="font-size:11px; color:oklch(55% 0.02 260); margin-top:6px;">Campo usado por el motor de NLP para clasificar gravedad y derivar al área correspondiente.</div>
+          </div>
+
+          <div>
+            <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Evidencia (opcional)</div>
+            <label style="display:flex; align-items:center; justify-content:center; gap:10px; border:1.5px dashed oklch(85% 0.01 260); border-radius:12px; padding:18px; cursor:pointer; color:oklch(45% 0.02 260); font-size:13px;">
+              <input type="file" accept="image/*" multiple onChange="{{ onFileChange }}" style="display:none;" />
+              <span>{{ fileLabel }}</span>
+            </label>
+          </div>
+
+          <sc-if value="{{ formAnalyzing }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; align-items:center; gap:10px; background:oklch(96% 0.03 220); border-radius:10px; padding:12px 16px; font-size:13px; color:oklch(40% 0.1 220); font-weight:500;">
+              <div style="width:16px; height:16px; border-radius:50%; border:2px solid oklch(75% 0.05 220); border-top-color:oklch(52% 0.15 220); animation:spin 0.8s linear infinite;"></div>
+              Analizando descripción con NLP para clasificar gravedad y área…
+            </div>
+            <div slot="else"></div>
+          </sc-if>
+
+          <button onClick="{{ onSubmit }}" disabled="{{ submitDisabled }}" style="{{ submitBtnStyle }}">{{ submitBtnLabel }}</button>
+        </div>
+      </div>
+      <div slot="else"></div>
+      </sc-if>
+      <div slot="else"></div>
+      </sc-if>
+
+      <sc-if value="{{ showCitMis }}" hint-placeholder-val="{{ false }}">
+      <div style="width:100%; max-width:900px;">
+        <div style="font-family:'Poppins'; font-weight:700; font-size:20px; margin-bottom:14px;">Mis solicitudes</div>
+        <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; overflow:hidden;">
+          <div style="padding:14px 18px; border-bottom:1px solid oklch(93% 0.01 260); font-size:12.5px; color:oklch(50% 0.02 260);">{{ myTickets.length }} solicitudes registradas con esta cuenta</div>
+          <div style="max-height:520px; overflow-y:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+              <thead>
+                <tr style="position:sticky; top:0; background:oklch(97% 0.005 95); text-align:left;">
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Código</th>
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Fecha</th>
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Descripción</th>
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Área</th>
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Gravedad</th>
+                  <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ myTickets }}" as="mt" hint-placeholder-count="4">
+                  <tr onClick="{{ mt.onClick }}" style="border-bottom:1px solid oklch(95% 0.005 95); cursor:pointer;" style-hover="background:oklch(98% 0.005 95);">
+                    <td style="padding:11px 16px; font-weight:600; font-family:monospace;">{{ mt.codigo }}</td>
+                    <td style="padding:11px 16px; color:oklch(45% 0.02 260);">{{ mt.fechaFmt }}</td>
+                    <td style="padding:11px 16px; color:oklch(45% 0.02 260); max-width:260px;">{{ mt.descripcionCorta }}</td>
+                    <td style="padding:11px 16px;">{{ mt.area }}</td>
+                    <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:{{ mt.gravedadBg }}; color:{{ mt.gravedadColor }}; font-weight:700; font-size:11px;">{{ mt.gravedad }}</span></td>
+                    <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:{{ mt.estadoBg }}; color:{{ mt.estadoColor }}; font-weight:600; font-size:11px;">{{ mt.estado }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div slot="else"></div>
+      </sc-if>
+    </main>
+  </div>
+  <div slot="else"></div>
+  </sc-if>
+
+  <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; display:flex;">
+    <nav style="width:200px; background:white; border-right:1px solid oklch(90% 0.01 260); padding:24px 14px; display:flex; flex-direction:column; gap:4px;">
+      <button onClick="{{ goDashboard }}" style="{{ sideBtnDashboardStyle }}">Dashboard</button>
+      <button onClick="{{ goTickets }}" style="{{ sideBtnTicketsStyle }}">Tickets</button>
+    </nav>
+
+    <div style="flex:1; padding:28px 32px 60px; overflow-y:auto; max-height:calc(100vh - 62px);">
+
+      <sc-if value="{{ selectedTicket }}" hint-placeholder-val="{{ false }}">
+        <div>
+          <button onClick="{{ closeDetail }}" style="background:none; border:none; color:oklch(52% 0.15 220); font-size:13px; font-weight:600; cursor:pointer; padding:0 0 16px; display:flex; align-items:center; gap:4px;">← Volver a tickets</button>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+            <div>
+              <div style="font-family:'Poppins'; font-weight:700; font-size:22px;">{{ selectedTicket.codigo }}</div>
+              <div style="font-size:13px; color:oklch(45% 0.02 260);">Registrado el {{ selectedTicket.fechaFmt }}</div>
+            </div>
+            <select value="{{ selectedTicket.estado }}" onChange="{{ onEstadoChange }}" style="border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:9px 12px; font-size:13px; font-weight:600;">
+              <sc-for list="{{ estadoOptions }}" as="e" hint-placeholder-count="4">
+                <option value="{{ e }}">{{ e }}</option>
+              </sc-for>
+            </select>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:20px;">
+            <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:24px;">
+              <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:16px;">Datos del reporte</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; font-size:13px; margin-bottom:18px;">
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ciudadano</div><div style="font-weight:600;">{{ selectedTicket.nombre }}</div></div>
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Sector</div><div style="font-weight:600;">{{ selectedTicket.sector }}</div></div>
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Correo</div><div style="font-weight:600;">{{ selectedTicket.correo }}</div></div>
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Celular</div><div style="font-weight:600;">{{ selectedTicket.celular }}</div></div>
+                <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ubicación</div><div style="font-weight:600;">{{ selectedTicket.ubicacion }}</div></div>
+              </div>
+              <div style="color:oklch(55% 0.02 260); font-size:13px; margin-bottom:4px;">Descripción del incidente</div>
+              <div style="background:oklch(97% 0.005 95); border-radius:10px; padding:14px; font-size:13px; line-height:1.5;">{{ selectedTicket.descripcion }}</div>
+              <div style="margin-top:16px; color:oklch(55% 0.02 260); font-size:13px; margin-bottom:6px;">Evidencia adjunta</div>
+              <div style="border:1.5px dashed oklch(85% 0.01 260); border-radius:10px; padding:16px; font-size:12px; color:oklch(55% 0.02 260); font-family:monospace; text-align:center;">{{ selectedTicket.evidenciaLabel }}</div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación NLP</div>
+                <div style="display:flex; gap:10px; margin-bottom:14px;">
+                  <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Gravedad</div>
+                    <div style="display:inline-flex; padding:4px 10px; border-radius:14px; background:{{ selectedTicket.gravedadBg }}; color:{{ selectedTicket.gravedadColor }}; font-weight:700; font-size:12px;">{{ selectedTicket.gravedad }}</div>
+                  </div>
+                  <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Área derivada</div>
+                    <div style="font-weight:600; font-size:12px;">{{ selectedTicket.area }}</div>
+                  </div>
+                </div>
+                <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:6px;">Confianza del modelo: {{ selectedTicket.confianza }}%</div>
+                <div style="height:6px; background:oklch(93% 0.01 260); border-radius:4px; overflow:hidden;">
+                  <div style="height:100%; background:oklch(52% 0.15 220); width:{{ selectedTicket.confianzaPct }};"></div>
+                </div>
+              </div>
+              <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+                <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:10px;">Notas internas</div>
+                <textarea placeholder="Agregar seguimiento interno del área responsable…" style="width:100%; min-height:90px; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px; font-size:13px; resize:vertical;"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div slot="else"></div>
+      </sc-if>
+
+      <sc-if value="{{ showAdminList }}" hint-placeholder-val="{{ true }}">
+      <div>
+      <div style="display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap; background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:14px 18px;">
+        <div>
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Desde</label>
+          <input type="date" value="{{ filterDateFrom }}" onChange="{{ onFilterDateFromChange }}" style="{{ filterInputStyle }}" />
+        </div>
+        <div>
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Hasta</label>
+          <input type="date" value="{{ filterDateTo }}" onChange="{{ onFilterDateToChange }}" style="{{ filterInputStyle }}" />
+        </div>
+        <sc-if value="{{ isDashboardTab }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Periodo</label>
+          <select value="{{ filterPeriodo }}" onChange="{{ onFilterPeriodoChange }}" style="{{ filterInputStyle }}">
+            <sc-for list="{{ periodoOptions }}" as="po" hint-placeholder-count="4">
+              <option value="{{ po }}">{{ po }}</option>
+            </sc-for>
+          </select>
+        </div>
+        <div slot="else"></div>
+        </sc-if>
+        <div>
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Gravedad</label>
+          <select value="{{ filterGravedad }}" onChange="{{ onFilterGravedadChange }}" style="{{ filterInputStyle }}">
+            <sc-for list="{{ gravedadFilterOptions }}" as="g" hint-placeholder-count="5">
+              <option value="{{ g }}">{{ g }}</option>
+            </sc-for>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Área</label>
+          <select value="{{ filterArea }}" onChange="{{ onFilterAreaChange }}" style="{{ filterInputStyle }}">
+            <sc-for list="{{ areaFilterOptions }}" as="a" hint-placeholder-count="8">
+              <option value="{{ a }}">{{ a }}</option>
+            </sc-for>
+          </select>
+        </div>
+        <sc-if value="{{ isTicketsTab }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1; min-width:180px;">
+          <label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Buscar por código o nombre</label>
+          <input value="{{ searchQuery }}" onChange="{{ onSearchChange }}" placeholder="TCK-2026-00012 / María Torres" style="{{ filterInputStyle }} width:100%;" />
+        </div>
+        <div slot="else"></div>
+        </sc-if>
+        <button onClick="{{ clearFilters }}" style="margin-left:auto; background:none; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:9px 14px; font-size:12px; color:oklch(45% 0.02 260); cursor:pointer; align-self:flex-end;">Limpiar filtros</button>
+      </div>
+
+      <sc-if value="{{ isDashboardTab }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;">
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:18px;">
+            <div style="font-size:12px; color:oklch(50% 0.02 260); margin-bottom:6px;">Total de reportes</div>
+            <div style="font-family:'Poppins'; font-weight:700; font-size:26px;">{{ kpiTotal }}</div>
+          </div>
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:18px;">
+            <div style="font-size:12px; color:oklch(50% 0.02 260); margin-bottom:6px;">Gravedad alta</div>
+            <div style="font-family:'Poppins'; font-weight:700; font-size:26px; color:oklch(60% 0.2 35);">{{ kpiAltaPct }}%</div>
+          </div>
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:18px;">
+            <div style="font-size:12px; color:oklch(50% 0.02 260); margin-bottom:6px;">Resueltos</div>
+            <div style="font-family:'Poppins'; font-weight:700; font-size:26px; color:oklch(60% 0.15 145);">{{ kpiResueltoPct }}%</div>
+          </div>
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:18px;">
+            <div style="font-size:12px; color:oklch(50% 0.02 260); margin-bottom:6px;">Tiempo prom. de atención</div>
+            <div style="font-family:'Poppins'; font-weight:700; font-size:26px;">{{ kpiTiempo }}</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:16px;">
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Incidentes por periodo (con línea de tendencia)</div>
+            <svg viewBox="0 0 640 220" style="width:100%; height:220px;">
+              <sc-for list="{{ chartGridLines }}" as="gl" hint-placeholder-count="4">
+                <line x1="0" x2="640" y1="{{ gl }}" y2="{{ gl }}" stroke="oklch(93% 0.005 95)" stroke-width="1"></line>
+              </sc-for>
+              <path d="{{ lineAreaPath }}" fill="oklch(93% 0.04 220)" stroke="none"></path>
+              <path d="{{ linePath }}" fill="none" stroke="oklch(52% 0.15 220)" stroke-width="2.5"></path>
+              <path d="{{ trendPath }}" fill="none" stroke="oklch(68% 0.19 45)" stroke-width="2" stroke-dasharray="6,4"></path>
+              <sc-for list="{{ linePoints }}" as="pt" hint-placeholder-count="8">
+                <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="3.5" fill="oklch(52% 0.15 220)"></circle>
+              </sc-for>
+            </svg>
+            <div style="display:flex; justify-content:space-between; font-size:10.5px; color:oklch(55% 0.02 260); margin-top:2px;">
+              <sc-for list="{{ lineLabels }}" as="lb" hint-placeholder-count="8">
+                <div>{{ lb }}</div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Ranking de áreas derivadas</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <sc-for list="{{ rankingBars }}" as="rb" hint-placeholder-count="7">
+                <div>
+                  <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:3px;">
+                    <span>{{ rb.rank }}. {{ rb.area }}</span>
+                    <span style="font-weight:700;">{{ rb.count }}</span>
+                  </div>
+                  <div style="height:8px; background:oklch(95% 0.005 95); border-radius:4px; overflow:hidden;">
+                    <div style="height:100%; background:oklch(52% 0.15 220); width:{{ rb.widthPct }};"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:16px;">
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Incidentes por gravedad y periodo (barras apiladas)</div>
+            <svg viewBox="0 0 640 200" style="width:100%; height:200px;">
+              <sc-for list="{{ stackedSegments }}" as="seg" hint-placeholder-count="20">
+                <rect x="{{ seg.x }}" y="{{ seg.y }}" width="{{ seg.w }}" height="{{ seg.h }}" fill="{{ seg.fill }}" rx="2"></rect>
+              </sc-for>
+            </svg>
+            <div style="display:flex; justify-content:space-between; font-size:10.5px; color:oklch(55% 0.02 260); margin-top:2px;">
+              <sc-for list="{{ lineLabels }}" as="lb2" hint-placeholder-count="8">
+                <div>{{ lb2 }}</div>
+              </sc-for>
+            </div>
+            <div style="display:flex; gap:14px; margin-top:12px;">
+              <sc-for list="{{ severityLegend }}" as="lg" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:oklch(40% 0.02 260);">
+                  <div style="width:9px; height:9px; border-radius:2px; background:{{ lg.color }};"></div>{{ lg.label }}
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+            <div style="font-size:13px; font-weight:700; margin-bottom:4px;">Zonas con más incidentes</div>
+            <div style="font-size:10.5px; color:oklch(55% 0.02 260); margin-bottom:10px; font-family:monospace;">MAPA REFERENCIAL — no georreferenciado a escala</div>
+            <div style="position:relative; width:100%; height:190px; background:oklch(97% 0.008 200); border-radius:10px; overflow:hidden; background-image:linear-gradient(oklch(93% 0.005 95) 1px, transparent 1px), linear-gradient(90deg, oklch(93% 0.005 95) 1px, transparent 1px); background-size:20px 20px;">
+              <sc-for list="{{ mapDots }}" as="md" hint-placeholder-count="6">
+                <div style="position:absolute; left:{{ md.x }}%; top:{{ md.y }}%; width:{{ md.size }}px; height:{{ md.size }}px; border-radius:50%; background:{{ md.color }}; opacity:0.75; transform:translate(-50%,-50%); display:flex; align-items:center; justify-content:center; font-size:9px; color:white; font-weight:700;">{{ md.count }}</div>
+              </sc-for>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px; margin-top:10px;">
+              <sc-for list="{{ mapLegend }}" as="ml" hint-placeholder-count="6">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:oklch(40% 0.02 260);">
+                  <span>{{ ml.dept }}</span><span style="font-weight:600;">{{ ml.count }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div slot="else"></div>
+      </sc-if>
+
+      <sc-if value="{{ isTicketsTab }}" hint-placeholder-val="{{ false }}">
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; overflow:hidden;">
+        <div style="padding:14px 18px; border-bottom:1px solid oklch(93% 0.01 260); font-size:12.5px; color:oklch(50% 0.02 260);">Mostrando {{ filteredTickets.length }} de {{ totalTicketCount }} tickets</div>
+        <div style="max-height:560px; overflow-y:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+            <thead>
+              <tr style="position:sticky; top:0; background:oklch(97% 0.005 95); text-align:left; z-index:1;">
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Código</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Fecha</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Ciudadano</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Ubicación</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Sector</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Gravedad</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Área</th>
+                <th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ filteredTickets }}" as="t" hint-placeholder-count="10">
+                <tr onClick="{{ t.onClick }}" style="border-bottom:1px solid oklch(95% 0.005 95); cursor:pointer;" style-hover="background:oklch(98% 0.005 95);">
+                  <td style="padding:11px 16px; font-weight:600; font-family:monospace;">{{ t.codigo }}</td>
+                  <td style="padding:11px 16px; color:oklch(45% 0.02 260);">{{ t.fechaFmt }}</td>
+                  <td style="padding:11px 16px;">{{ t.nombre }}</td>
+                  <td style="padding:11px 16px; color:oklch(45% 0.02 260);">{{ t.ubicacion }}</td>
+                  <td style="padding:11px 16px; color:oklch(45% 0.02 260);">{{ t.sector }}</td>
+                  <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:{{ t.gravedadBg }}; color:{{ t.gravedadColor }}; font-weight:700; font-size:11px;">{{ t.gravedad }}</span></td>
+                  <td style="padding:11px 16px;">{{ t.area }}</td>
+                  <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:{{ t.estadoBg }}; color:{{ t.estadoColor }}; font-weight:600; font-size:11px;">{{ t.estado }}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div slot="else"></div>
+      </sc-if>
+      </div>
+      <div slot="else"></div>
+      </sc-if>
+    </div>
+  </div>
+  <div slot="else"></div>
+  </sc-if>
+</div>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const AREAS = ['Seguridad Ciudadana','Tránsito y Transporte','Obras Públicas e Infraestructura','Medio Ambiente y Salubridad','Servicios Públicos','Defensa Civil y Riesgos','Fiscalización y Control'];
+const GRAVEDADES = ['Baja','Media','Alta','NA'];
+const SECTORES = ['Privado','Público','Ciudadano'];
+const ESTADOS = ['Nuevo','En proceso','Derivado','Resuelto'];
+const SEV_COLOR = { Baja:{bg:'oklch(93% 0.05 165)',fg:'oklch(38% 0.1 165)',dot:'oklch(65% 0.13 165)'}, Media:{bg:'oklch(94% 0.07 85)',fg:'oklch(45% 0.12 85)',dot:'oklch(78% 0.15 85)'}, Alta:{bg:'oklch(93% 0.08 35)',fg:'oklch(45% 0.18 35)',dot:'oklch(60% 0.2 35)'}, NA:{bg:'oklch(94% 0.005 260)',fg:'oklch(45% 0.01 260)',dot:'oklch(65% 0.01 260)'} };
+const EST_COLOR = { Nuevo:{bg:'oklch(94% 0.05 220)',fg:'oklch(40% 0.12 220)'}, 'En proceso':{bg:'oklch(94% 0.07 85)',fg:'oklch(45% 0.12 85)'}, Derivado:{bg:'oklch(93% 0.06 300)',fg:'oklch(45% 0.13 300)'}, Resuelto:{bg:'oklch(93% 0.06 145)',fg:'oklch(40% 0.13 145)'} };
+const LOCATIONS = {
+  'Lima': { x:30, y:58, provincias: { 'Lima': ['Miraflores','San Isidro','Surco','Comas'], 'Callao': ['Callao','Bellavista'] } },
+  'Arequipa': { x:34, y:82, provincias: { 'Arequipa': ['Cercado','Yanahuara','Cayma'] } },
+  'Cusco': { x:52, y:74, provincias: { 'Cusco': ['Wanchaq','San Sebastián'] } },
+  'Piura': { x:16, y:16, provincias: { 'Piura': ['Piura','Castilla'] } },
+  'La Libertad': { x:20, y:36, provincias: { 'Trujillo': ['Trujillo','Víctor Larco'] } },
+  'Junín': { x:40, y:50, provincias: { 'Huancayo': ['Huancayo','El Tambo'] } }
+};
+const NOMBRES = ['María','José','Ana','Carlos','Lucía','Jorge','Rosa','Luis','Carmen','Miguel','Elena','Pedro','Fiorella','Diego','Patricia'];
+const APELLIDOS = ['Torres','Quispe','Rojas','Flores','Mamani','Vargas','Cruz','Salazar','Ramos','Chávez','Huamán','Paredes'];
+const PHRASES = [
+  { area:'Seguridad Ciudadana', gravedad:'Alta', text:'Se reportó un robo a mano armada frente al mercado municipal durante la noche.' },
+  { area:'Seguridad Ciudadana', gravedad:'Media', text:'Vecinos denuncian presencia de personas sospechosas rondando las viviendas del sector.' },
+  { area:'Seguridad Ciudadana', gravedad:'Baja', text:'Se solicita mayor patrullaje por reportes de hurtos menores en la zona.' },
+  { area:'Tránsito y Transporte', gravedad:'Alta', text:'Accidente de tránsito con vehículo volcado bloqueando la vía principal.' },
+  { area:'Tránsito y Transporte', gravedad:'Media', text:'Semáforo malogrado genera congestión y riesgo de choques en el cruce principal.' },
+  { area:'Tránsito y Transporte', gravedad:'Baja', text:'Vehículo mal estacionado obstruye el paso peatonal en la avenida.' },
+  { area:'Obras Públicas e Infraestructura', gravedad:'Alta', text:'Poste de alumbrado a punto de caer sobre la vía tras fuertes vientos.' },
+  { area:'Obras Públicas e Infraestructura', gravedad:'Media', text:'Bache de gran tamaño en la pista principal genera riesgo para los vehículos.' },
+  { area:'Obras Públicas e Infraestructura', gravedad:'Baja', text:'Vereda agrietada dificulta el tránsito de peatones en la cuadra.' },
+  { area:'Medio Ambiente y Salubridad', gravedad:'Alta', text:'Quema de residuos genera densa humareda cerca de un centro educativo.' },
+  { area:'Medio Ambiente y Salubridad', gravedad:'Media', text:'Acumulación de basura en la vía pública desde hace varios días.' },
+  { area:'Medio Ambiente y Salubridad', gravedad:'Baja', text:'Malos olores provenientes de un contenedor de residuos mal ubicado.' },
+  { area:'Servicios Públicos', gravedad:'Alta', text:'Fuga de agua potable inunda la calle y afecta el suministro del sector.' },
+  { area:'Servicios Públicos', gravedad:'Media', text:'Corte de energía eléctrica prolongado afecta a varias cuadras.' },
+  { area:'Servicios Públicos', gravedad:'Baja', text:'Poste sin iluminación desde hace varias semanas en la esquina.' },
+  { area:'Defensa Civil y Riesgos', gravedad:'Alta', text:'Grieta en muro de contención tras las últimas lluvias representa riesgo de derrumbe.' },
+  { area:'Defensa Civil y Riesgos', gravedad:'Media', text:'Árbol de gran tamaño con riesgo de caída sobre la vía pública.' },
+  { area:'Defensa Civil y Riesgos', gravedad:'Baja', text:'Se solicita evaluación de un desnivel en la vereda por posible riesgo.' },
+  { area:'Fiscalización y Control', gravedad:'Alta', text:'Construcción sin licencia municipal compromete la seguridad de una vivienda vecina.' },
+  { area:'Fiscalización y Control', gravedad:'Media', text:'Comercio ambulante ocupa la vía pública generando desorden y congestión.' },
+  { area:'Fiscalización y Control', gravedad:'Baja', text:'Ruido excesivo de un local nocturno afecta el descanso de los vecinos.' }
+];
+const AREA_KEYWORDS = {
+  'Seguridad Ciudadana': ['robo','asalto','arma','sospechos','violencia','pandilla','agresión','hurto'],
+  'Tránsito y Transporte': ['semáforo','tránsito','vehículo','accidente','estacionado','choque','moto'],
+  'Obras Públicas e Infraestructura': ['bache','pista','vereda','poste','pavimento','puente'],
+  'Medio Ambiente y Salubridad': ['basura','residuos','contaminación','quema','desechos','olores'],
+  'Servicios Públicos': ['agua','luz','desagüe','alumbrado','corte','fuga','alcantarilla'],
+  'Defensa Civil y Riesgos': ['derrumbe','grieta','sismo','riesgo','inundación','deslizamiento','caída'],
+  'Fiscalización y Control': ['ambulante','licencia','ruido','informal','invasión','comercio']
+};
+const SEV_KEYWORDS = [ ['Alta',['arma','armada','incendio','derrumbe','grieta','herido','riesgo de vida','sismo','volcado']], ['Media',['accidente','choque','fuga','prolongado','inundación','asalto','congestión']], ['Baja',['ruido','basura','estacionado','ambulante','olores','informal']] ];
+const MUNICIPAL_CONTACTS = {
+  'Seguridad Ciudadana': { correo:'seguridadciudadana@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 201' },
+  'Tránsito y Transporte': { correo:'transito@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 202' },
+  'Obras Públicas e Infraestructura': { correo:'obraspublicas@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 203' },
+  'Medio Ambiente y Salubridad': { correo:'ambiente@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 204' },
+  'Servicios Públicos': { correo:'serviciospublicos@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 205' },
+  'Defensa Civil y Riesgos': { correo:'defensacivil@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 206' },
+  'Fiscalización y Control': { correo:'fiscalizacion@municipalidaddigital.gob.pe', telefono:'(01) 555-0102 anexo 207' }
+};
+const CITIZEN_DEMO_EMAIL = 'maria.torres82@mail.com';
+const CITIZEN_DEMO_NOMBRE = 'María Torres Quispe';
+const CITIZEN_DEMO_DNI = '87654321';
+
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function pickWeighted(rng, items){ const total=items.reduce((s,i)=>s+i[1],0); let r=rng()*total; for(const [v,w] of items){ if(r<w) return v; r-=w; } return items[0][0]; }
+function pad(n,l){ return String(n).padStart(l,'0'); }
+function fmtDate(d){ return pad(d.getDate(),2)+'/'+pad(d.getMonth()+1,2)+'/'+d.getFullYear(); }
+
+function classify(text){
+  const lower = (text||'').toLowerCase();
+  let bestArea = null, bestScore = 0; const hits = [];
+  for (const area of AREAS) {
+    let score = 0;
+    for (const kw of AREA_KEYWORDS[area]) if (lower.includes(kw)) { score++; hits.push(kw); }
+    if (score > bestScore) { bestScore = score; bestArea = area; }
+  }
+  let gravedad = 'NA'; const sevHits = [];
+  for (const [g, kws] of SEV_KEYWORDS) {
+    for (const kw of kws) if (lower.includes(kw)) { sevHits.push(kw); if (gravedad === 'NA') gravedad = g; }
+  }
+  if (!bestArea) bestArea = 'Fiscalización y Control';
+  const totalHits = bestScore + sevHits.length;
+  const confidence = Math.min(97, 68 + totalHits * 7 + (lower.length % 5));
+  const keywords = Array.from(new Set([...hits, ...sevHits])).slice(0, 5);
+  if (keywords.length === 0) keywords.push('sin coincidencias claras');
+  return { area: bestArea, gravedad, confidence, keywords };
+}
+
+function generateTickets(count) {
+  const rng = mulberry32(20260716);
+  const now = new Date();
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    const phrase = PHRASES[Math.floor(rng() * PHRASES.length)];
+    const daysAgo = Math.floor(rng() * 730);
+    const date = new Date(now.getTime() - daysAgo * 86400000);
+    const depto = pickWeighted(rng, [['Lima',4],['Arequipa',1.5],['Cusco',1.2],['Piura',1],['La Libertad',1],['Junín',0.8]]);
+    const provincias = Object.keys(LOCATIONS[depto].provincias);
+    const provincia = provincias[Math.floor(rng() * provincias.length)];
+    const distritos = LOCATIONS[depto].provincias[provincia];
+    const distrito = distritos[Math.floor(rng() * distritos.length)];
+    const isOwnedByDemo = i % 23 === 3;
+    const nombre = isOwnedByDemo ? CITIZEN_DEMO_NOMBRE : (NOMBRES[Math.floor(rng() * NOMBRES.length)] + ' ' + APELLIDOS[Math.floor(rng() * APELLIDOS.length)] + ' ' + APELLIDOS[Math.floor(rng() * APELLIDOS.length)]);
+    const correo = isOwnedByDemo ? CITIZEN_DEMO_EMAIL : (nombre.toLowerCase().split(' ')[0] + '.' + nombre.toLowerCase().split(' ')[1] + Math.floor(rng()*90+10) + '@mail.com');
+    const celular = '9' + Array.from({length:8},()=>Math.floor(rng()*10)).join('');
+    const sector = SECTORES[Math.floor(rng() * SECTORES.length)];
+    const estado = pickWeighted(rng, [['Nuevo',20],['En proceso',28],['Derivado',22],['Resuelto',30]]);
+    const confianza = Math.floor(78 + rng() * 19);
+    list.push({
+      codigo: 'TCK-' + date.getFullYear() + '-' + pad(i + 1, 5),
+      fecha: date, fechaFmt: fmtDate(date),
+      departamento: depto, provincia, distrito,
+      ubicacion: distrito + ', ' + provincia + ', ' + depto,
+      nombre, correo, celular, sector, ownerDni: isOwnedByDemo ? CITIZEN_DEMO_DNI : null,
+      descripcion: phrase.text, area: phrase.area, gravedad: phrase.gravedad, confianza,
+      estado, evidenciaLabel: (rng() > 0.5 ? '[ imagen-incidente-' + (i%7+1) + '.jpg adjunta ]' : 'Sin evidencia adjunta')
+    });
+  }
+  return list;
+}
+
+class Component extends DCLogic {
+  state = {
+    mode: 'login', adminTab: 'dashboard', citizenTab: 'nuevo', selectedTicket: null,
+    authUser: null, loginRole: 'ciudadano', loginDni: '',
+    tickets: generateTickets(160),
+    f_departamento: '', f_provincia: '', f_distrito: '', f_nombres: '', f_correo: '', f_celular: '', f_sector: '', f_descripcion: '',
+    fileNames: [], formStep: 'input', analysis: null, ticketCode: '',
+    filterDateFrom: '', filterDateTo: '', filterPeriodo: 'Mensual', filterGravedad: 'Todas', filterArea: 'Todas', searchQuery: ''
+  };
+
+  bucketFor(date, periodo) {
+    const y = date.getFullYear(), m = date.getMonth();
+    if (periodo === 'Diario') { const key = y+'-'+pad(m+1,2)+'-'+pad(date.getDate(),2); return { key, label: pad(date.getDate(),2)+'/'+pad(m+1,2), sort: date.getTime() }; }
+    if (periodo === 'Trimestral') { const q = Math.floor(m/3)+1; return { key: y+'-Q'+q, label: 'T'+q+' '+String(y).slice(2), sort: y*10+q }; }
+    if (periodo === 'Anual') { return { key: String(y), label: String(y), sort: y }; }
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return { key: y+'-'+pad(m+1,2), label: meses[m]+' '+String(y).slice(2), sort: y*12+m };
+  }
+
+  applyFilters(tickets) {
+    const { filterDateFrom, filterDateTo, filterGravedad, filterArea } = this.state;
+    return tickets.filter(t => {
+      if (filterDateFrom && t.fecha < new Date(filterDateFrom)) return false;
+      if (filterDateTo && t.fecha > new Date(filterDateTo + 'T23:59:59')) return false;
+      if (filterGravedad !== 'Todas' && t.gravedad !== filterGravedad) return false;
+      if (filterArea !== 'Todas' && t.area !== filterArea) return false;
+      return true;
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const isLogin = s.mode === 'login', isCiudadano = s.mode === 'ciudadano', isAdmin = s.mode === 'admin';
+    const navBase = 'border:none; border-radius:8px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; background:transparent; color:oklch(45% 0.02 260);';
+    const navActive = 'border:none; border-radius:8px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; background:oklch(52% 0.15 220); color:white;';
+
+    const filtered = this.applyFilters(s.tickets);
+
+    const areaCounts = {};
+    AREAS.forEach(a => areaCounts[a] = 0);
+    filtered.forEach(t => areaCounts[t.area] = (areaCounts[t.area]||0) + 1);
+    const maxAreaCount = Math.max(1, ...Object.values(areaCounts));
+    const rankingBars = AREAS.map(a => ({ area: a, count: areaCounts[a] }))
+      .sort((a,b) => b.count - a.count)
+      .map((r,i) => ({ rank: i+1, area: r.area, count: r.count, widthPct: Math.round(r.count/maxAreaCount*100) + '%' }));
+
+    const bucketMap = {};
+    filtered.forEach(t => {
+      const b = this.bucketFor(t.fecha, s.filterPeriodo);
+      if (!bucketMap[b.key]) bucketMap[b.key] = { key:b.key, label:b.label, sort:b.sort, total:0, Baja:0, Media:0, Alta:0, NA:0 };
+      bucketMap[b.key].total++; bucketMap[b.key][t.gravedad]++;
+    });
+    let buckets = Object.values(bucketMap).sort((a,b) => a.sort - b.sort);
+    if (buckets.length > 10) buckets = buckets.slice(buckets.length - 10);
+    if (buckets.length === 0) buckets = [{ label:'—', total:0, Baja:0, Media:0, Alta:0, NA:0 }];
+
+    const chartW = 640, chartH = 220, padL = 10, padR = 10, padT = 20, padB = 10;
+    const maxTotal = Math.max(1, ...buckets.map(b => b.total));
+    const stepX = buckets.length > 1 ? (chartW - padL - padR) / (buckets.length - 1) : 0;
+    const linePoints = buckets.map((b,i) => ({ x: padL + i*stepX, y: padT + (chartH-padT-padB) * (1 - b.total/maxTotal) }));
+    const linePath = linePoints.map((p,i) => (i===0?'M':'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+    const lineAreaPath = linePoints.length ? linePath + ' L' + linePoints[linePoints.length-1].x.toFixed(1) + ',' + (chartH-padB) + ' L' + linePoints[0].x.toFixed(1) + ',' + (chartH-padB) + ' Z' : '';
+    const n = linePoints.length;
+    let trendPath = '';
+    if (n > 1) {
+      const xs = buckets.map((_,i)=>i), ys = buckets.map(b=>b.total);
+      const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+      let num=0, den=0; for (let i=0;i<n;i++){ num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)**2; }
+      const slope = den ? num/den : 0, intercept = my - slope*mx;
+      const y0 = intercept, y1 = intercept + slope*(n-1);
+      const py0 = padT + (chartH-padT-padB)*(1 - Math.max(0,y0)/maxTotal);
+      const py1 = padT + (chartH-padT-padB)*(1 - Math.max(0,y1)/maxTotal);
+      trendPath = 'M' + padL + ',' + py0.toFixed(1) + ' L' + (padL+stepX*(n-1)).toFixed(1) + ',' + py1.toFixed(1);
+    }
+    const lineLabels = buckets.map(b => b.label);
+    const chartGridLines = [padT, padT+(chartH-padT-padB)*0.33, padT+(chartH-padT-padB)*0.66, chartH-padB];
+
+    const sw = 640, sh = 200, sPadB = 16, sPadT = 8;
+    const maxStack = Math.max(1, ...buckets.map(b => b.total));
+    const barW = Math.min(48, (sw - 20) / buckets.length - 10);
+    const gap = (sw - barW*buckets.length) / (buckets.length + 1);
+    const order = ['Baja','Media','Alta','NA'];
+    const stackedSegments = [];
+    buckets.forEach((b, i) => {
+      let yCursor = sh - sPadB;
+      const x = gap + i*(barW+gap);
+      order.forEach(g => {
+        const val = b[g] || 0;
+        const h = (sh - sPadT - sPadB) * (val / maxStack);
+        if (h > 0) { yCursor -= h; stackedSegments.push({ x, y: yCursor, w: barW, h, fill: SEV_COLOR[g].dot }); }
+      });
+    });
+    const severityLegend = order.map(g => ({ label: g, color: SEV_COLOR[g].dot }));
+
+    const deptCounts = {};
+    filtered.forEach(t => { deptCounts[t.departamento] = (deptCounts[t.departamento]||0) + 1; });
+    const maxDept = Math.max(1, ...Object.values(deptCounts), 0);
+    const mapDots = Object.keys(LOCATIONS).map(d => {
+      const count = deptCounts[d] || 0;
+      const sevInDept = {};
+      filtered.filter(t=>t.departamento===d).forEach(t=>{ sevInDept[t.gravedad]=(sevInDept[t.gravedad]||0)+1; });
+      const domSev = Object.keys(sevInDept).sort((a,b)=>sevInDept[b]-sevInDept[a])[0] || 'NA';
+      return { dept: d, count, x: LOCATIONS[d].x, y: LOCATIONS[d].y, size: 18 + Math.round(28*Math.sqrt(count/maxDept)), color: SEV_COLOR[domSev].dot };
+    });
+    const mapLegend = [...mapDots].sort((a,b)=>b.count-a.count);
+
+    const kpiTotal = filtered.length;
+    const altaCount = filtered.filter(t=>t.gravedad==='Alta').length;
+    const resueltoCount = filtered.filter(t=>t.estado==='Resuelto').length;
+    const kpiAltaPct = kpiTotal ? Math.round(altaCount/kpiTotal*100) : 0;
+    const kpiResueltoPct = kpiTotal ? Math.round(resueltoCount/kpiTotal*100) : 0;
+    const kpiTiempo = (2.2 + (kpiAltaPct/100)*1.6).toFixed(1) + ' días';
+
+    const q = s.searchQuery.trim().toLowerCase();
+    const tableRows = filtered.filter(t => !q || t.codigo.toLowerCase().includes(q) || t.nombre.toLowerCase().includes(q))
+      .sort((a,b) => b.fecha - a.fecha)
+      .slice(0, 120)
+      .map(t => ({ ...t, gravedadBg: SEV_COLOR[t.gravedad].bg, gravedadColor: SEV_COLOR[t.gravedad].fg, estadoBg: EST_COLOR[t.estado].bg, estadoColor: EST_COLOR[t.estado].fg, onClick: () => this.setState({ selectedTicket: t }) }));
+
+    const sel = s.selectedTicket;
+    const selectedTicketVals = (sel && isAdmin) ? { ...sel, gravedadBg: SEV_COLOR[sel.gravedad].bg, gravedadColor: SEV_COLOR[sel.gravedad].fg, confianzaPct: sel.confianza + '%' } : null;
+    const citizenSelectedTicketVals = (sel && isCiudadano) ? { ...sel, gravedadBg: SEV_COLOR[sel.gravedad].bg, gravedadColor: SEV_COLOR[sel.gravedad].fg, estadoBg: EST_COLOR[sel.estado].bg, estadoColor: EST_COLOR[sel.estado].fg, contactoCorreo: (MUNICIPAL_CONTACTS[sel.area]||{}).correo, contactoTelefono: (MUNICIPAL_CONTACTS[sel.area]||{}).telefono } : null;
+
+    const myTickets = s.authUser ? s.tickets.filter(t => t.ownerDni === s.authUser.dni).sort((a,b)=>b.fecha-a.fecha)
+      .map(t => ({ ...t, descripcionCorta: t.descripcion.length > 70 ? t.descripcion.slice(0,70)+'…' : t.descripcion, gravedadBg: SEV_COLOR[t.gravedad].bg, gravedadColor: SEV_COLOR[t.gravedad].fg, estadoBg: EST_COLOR[t.estado].bg, estadoColor: EST_COLOR[t.estado].fg, onClick: () => this.setState({ selectedTicket: t }) }))
+      : [];
+
+    const descCount = s.f_descripcion.length;
+    const submitDisabled = !(s.f_departamento && s.f_provincia && s.f_distrito && s.f_nombres && /\S+@\S+\.\S+/.test(s.f_correo) && /^9\d{8}$/.test(s.f_celular) && s.f_sector && s.f_descripcion.length >= 10) || s.formStep === 'analyzing';
+
+    const roleBtnBase = 'flex:1; border:none; border-radius:8px; padding:9px 0; font-size:13px; font-weight:600; cursor:pointer; background:transparent; color:oklch(45% 0.02 260);';
+    const roleBtnActive = 'flex:1; border:none; border-radius:8px; padding:9px 0; font-size:13px; font-weight:600; cursor:pointer; background:oklch(52% 0.15 220); color:white;';
+    const loginDisabled = !/^\d{8}$/.test(s.loginDni.trim());
+
+    return {
+      isLogin, isCiudadano, isAdmin,
+      authUser: s.authUser,
+      authUserRoleLabel: s.authUser && s.authUser.type === 'admin' ? 'Administrador municipal' : 'Cuenta ciudadana',
+      onLogout: () => this.setState({ authUser: null, mode: 'login', selectedTicket: null, loginDni: '' }),
+
+      roleBtnCiudadanoStyle: s.loginRole === 'ciudadano' ? roleBtnActive : roleBtnBase,
+      roleBtnAdminStyle: s.loginRole === 'admin' ? roleBtnActive : roleBtnBase,
+      selectRoleCiudadano: () => this.setState({ loginRole: 'ciudadano' }),
+      selectRoleAdmin: () => this.setState({ loginRole: 'admin' }),
+      loginDni: s.loginDni,
+      loginDniPlaceholder: s.loginRole === 'ciudadano' ? CITIZEN_DEMO_DNI : '00000000',
+      onLoginDniChange: e => this.setState({ loginDni: e.target.value.replace(/\D/g,'').slice(0,8) }),
+      onLoginSubmit: () => {
+        if (loginDisabled) return;
+        const dni = this.state.loginDni.trim();
+        const nombre = this.state.loginRole === 'ciudadano' ? (dni === CITIZEN_DEMO_DNI ? CITIZEN_DEMO_NOMBRE : 'Ciudadano ' + dni) : 'Administrador Municipal';
+        this.setState({
+          authUser: { type: this.state.loginRole, dni, nombre },
+          mode: this.state.loginRole, citizenTab: 'nuevo',
+          f_nombres: this.state.loginRole === 'ciudadano' ? nombre : ''
+        });
+      },
+
+      citTabNuevoStyle: (s.citizenTab === 'nuevo' && !sel ? 'border:none; border-bottom:2px solid oklch(52% 0.15 220); padding:14px 6px; font-size:13.5px; font-weight:700; cursor:pointer; background:none; color:oklch(52% 0.15 220);' : 'border:none; border-bottom:2px solid transparent; padding:14px 6px; font-size:13.5px; font-weight:600; cursor:pointer; background:none; color:oklch(50% 0.02 260);'),
+      citTabMisStyle: (s.citizenTab === 'mis' && !sel ? 'border:none; border-bottom:2px solid oklch(52% 0.15 220); padding:14px 6px; font-size:13.5px; font-weight:700; cursor:pointer; background:none; color:oklch(52% 0.15 220);' : 'border:none; border-bottom:2px solid transparent; padding:14px 6px; font-size:13.5px; font-weight:600; cursor:pointer; background:none; color:oklch(50% 0.02 260);'),
+      goNuevo: () => this.setState({ citizenTab: 'nuevo', selectedTicket: null }),
+      goMisSolicitudes: () => this.setState({ citizenTab: 'mis', selectedTicket: null }),
+      citizenSelectedTicket: citizenSelectedTicketVals,
+      showCitNuevo: s.citizenTab === 'nuevo' && !sel,
+      showCitMis: s.citizenTab === 'mis' && !sel,
+      myTickets,
+
+      f_departamento: s.f_departamento, f_provincia: s.f_provincia, f_distrito: s.f_distrito, f_nombres: s.f_nombres, f_correo: s.f_correo, f_celular: s.f_celular, f_sector: s.f_sector, f_descripcion: s.f_descripcion,
+      departamentoOptions: Object.keys(LOCATIONS),
+      provinciaOptions: s.f_departamento ? Object.keys(LOCATIONS[s.f_departamento].provincias) : [],
+      distritoOptions: (s.f_departamento && s.f_provincia) ? LOCATIONS[s.f_departamento].provincias[s.f_provincia] : [],
+      sectorOptions: SECTORES,
+      onDepartamentoChange: e => this.setState({ f_departamento: e.target.value, f_provincia: '', f_distrito: '' }),
+      onProvinciaChange: e => this.setState({ f_provincia: e.target.value, f_distrito: '' }),
+      onDistritoChange: e => this.setState({ f_distrito: e.target.value }),
+      onNombresChange: e => this.setState({ f_nombres: e.target.value }),
+      onCorreoChange: e => this.setState({ f_correo: e.target.value }),
+      onCelularChange: e => this.setState({ f_celular: e.target.value.replace(/\D/g,'').slice(0,9) }),
+      onSectorChange: e => this.setState({ f_sector: e.target.value }),
+      onDescripcionChange: e => this.setState({ f_descripcion: e.target.value.slice(0,500) }),
+      onFileChange: e => this.setState({ fileNames: Array.from(e.target.files||[]).map(f=>f.name) }),
+      fileLabel: s.fileNames.length ? s.fileNames.join(', ') : 'Arrastra fotos o haz clic para adjuntar evidencia',
+      descCount,
+      selectStyle: 'width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 10px; font-size:13px; background:white;',
+      inputStyle: 'width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 12px; font-size:13px;',
+      submitDisabled,
+      submitBtnStyle: 'border:none; border-radius:10px; padding:14px 22px; font-size:14px; font-weight:700; cursor:pointer; width:100%; background:' + (submitDisabled ? 'oklch(90% 0.01 260)' : 'oklch(68% 0.19 45)') + '; color:' + (submitDisabled ? 'oklch(60% 0.01 260)' : 'white') + ';',
+      submitBtnLabel: s.formStep === 'analyzing' ? 'Analizando…' : 'Enviar reporte',
+      formAnalyzing: s.formStep === 'analyzing',
+      formDone: s.formStep === 'done',
+      formNotDone: s.formStep !== 'done',
+      onSubmit: () => {
+        if (submitDisabled) return;
+        this.setState({ formStep: 'analyzing' });
+        setTimeout(() => {
+          const result = classify(this.state.f_descripcion);
+          const code = 'TCK-' + new Date().getFullYear() + '-' + pad(this.state.tickets.length + 1, 5);
+          const newTicket = {
+            codigo: code, fecha: new Date(), fechaFmt: fmtDate(new Date()),
+            departamento: this.state.f_departamento, provincia: this.state.f_provincia, distrito: this.state.f_distrito,
+            ubicacion: this.state.f_distrito + ', ' + this.state.f_provincia + ', ' + this.state.f_departamento,
+            nombre: this.state.f_nombres, correo: this.state.f_correo, celular: this.state.f_celular, sector: this.state.f_sector,
+            descripcion: this.state.f_descripcion, area: result.area, gravedad: result.gravedad, confianza: result.confidence,
+            estado: 'Nuevo', ownerDni: this.state.authUser ? this.state.authUser.dni : null,
+            evidenciaLabel: this.state.fileNames.length ? '[ ' + this.state.fileNames.join(', ') + ' ]' : 'Sin evidencia adjunta'
+          };
+          this.setState(prev => ({ formStep: 'done', analysis: result, ticketCode: code, tickets: [newTicket, ...prev.tickets] }));
+        }, 1200);
+      },
+      resetForm: () => this.setState({ formStep: 'input', f_departamento:'', f_provincia:'', f_distrito:'', f_nombres: this.state.authUser?this.state.authUser.nombre:'', f_correo:'', f_celular:'', f_sector:'', f_descripcion:'', fileNames:[] }),
+      analysisGravedad: s.analysis ? s.analysis.gravedad : '', analysisArea: s.analysis ? s.analysis.area : '', analysisConfidence: s.analysis ? s.analysis.confidence : '',
+      analysisKeywords: s.analysis ? s.analysis.keywords : [],
+      analysisGravedadBg: s.analysis ? SEV_COLOR[s.analysis.gravedad].bg : '', analysisGravedadColor: s.analysis ? SEV_COLOR[s.analysis.gravedad].fg : '',
+      ticketCode: s.ticketCode,
+
+      sideBtnDashboardStyle: 'text-align:left; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:600; cursor:pointer; background:' + (s.adminTab==='dashboard' && !sel ? 'oklch(95% 0.03 220)' : 'transparent') + '; color:' + (s.adminTab==='dashboard' && !sel ? 'oklch(45% 0.12 220)' : 'oklch(45% 0.02 260)') + ';',
+      sideBtnTicketsStyle: 'text-align:left; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:600; cursor:pointer; background:' + (s.adminTab==='tickets' && !sel ? 'oklch(95% 0.03 220)' : 'transparent') + '; color:' + (s.adminTab==='tickets' && !sel ? 'oklch(45% 0.12 220)' : 'oklch(45% 0.02 260)') + ';',
+      goDashboard: () => this.setState({ adminTab: 'dashboard', selectedTicket: null }),
+      goTickets: () => this.setState({ adminTab: 'tickets', selectedTicket: null }),
+      selectedTicket: selectedTicketVals,
+      closeDetail: () => this.setState({ selectedTicket: null }),
+      estadoOptions: ESTADOS,
+      onEstadoChange: e => { const val = e.target.value; this.setState(prev => ({ selectedTicket: { ...prev.selectedTicket, estado: val }, tickets: prev.tickets.map(t => t.codigo === prev.selectedTicket.codigo ? { ...t, estado: val } : t) })); },
+
+      showAdminList: !sel,
+      isDashboardTab: s.adminTab === 'dashboard', isTicketsTab: s.adminTab === 'tickets',
+      filterDateFrom: s.filterDateFrom, filterDateTo: s.filterDateTo, filterPeriodo: s.filterPeriodo, filterGravedad: s.filterGravedad, filterArea: s.filterArea, searchQuery: s.searchQuery,
+      onFilterDateFromChange: e => this.setState({ filterDateFrom: e.target.value }),
+      onFilterDateToChange: e => this.setState({ filterDateTo: e.target.value }),
+      onFilterPeriodoChange: e => this.setState({ filterPeriodo: e.target.value }),
+      onFilterGravedadChange: e => this.setState({ filterGravedad: e.target.value }),
+      onFilterAreaChange: e => this.setState({ filterArea: e.target.value }),
+      onSearchChange: e => this.setState({ searchQuery: e.target.value }),
+      clearFilters: () => this.setState({ filterDateFrom:'', filterDateTo:'', filterGravedad:'Todas', filterArea:'Todas', searchQuery:'' }),
+      periodoOptions: ['Diario','Mensual','Trimestral','Anual'],
+      gravedadFilterOptions: ['Todas', ...GRAVEDADES],
+      areaFilterOptions: ['Todas', ...AREAS],
+      filterInputStyle: 'border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:8px 10px; font-size:12.5px; background:white;',
+
+      kpiTotal, kpiAltaPct, kpiResueltoPct, kpiTiempo,
+      linePath, lineAreaPath, trendPath, linePoints, lineLabels, chartGridLines,
+      rankingBars,
+      stackedSegments, severityLegend,
+      mapDots, mapLegend,
+      totalTicketCount: s.tickets.length,
+      filteredTickets: tableRows
+    };
+  }
+}
+
+</script>
+</body>
+</html>

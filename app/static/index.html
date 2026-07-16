@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema NLP · Reportes Ciudadanos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: oklch(98% 0.006 95); font-family: 'Inter', Helvetica, Arial, sans-serif; color: oklch(20% 0.02 260); }
+  a { color: oklch(52% 0.15 220); }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: oklch(85% 0.01 260); border-radius: 4px; }
+  select, input, textarea { font-family: inherit; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  tr.rowlink:hover { background: oklch(98% 0.005 95); }
+  button { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="app" style="min-height:100vh; display:flex; flex-direction:column;"></div>
+
+<script>
+// ===========================================================================
+//  Estado y utilidades
+// ===========================================================================
+const API = {
+  async get(u){ const r = await fetch(u); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  async post(u,b){ const r = await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}); const j = await r.json(); if(!r.ok) throw new Error(j.error||r.statusText); return j; },
+  async patch(u,b){ const r = await fetch(u,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}); const j = await r.json(); if(!r.ok) throw new Error(j.error||r.statusText); return j; },
+};
+
+const state = {
+  mode: 'login', authUser: null, loginRole: 'ciudadano', loginDni: '', loginError: '',
+  meta: null, allTickets: [], myTickets: [], selectedTicket: null,
+  citizenTab: 'nuevo', adminTab: 'dashboard',
+  form: { departamento:'', provincia:'', distrito:'', nombres:'', correo:'', celular:'', sector:'', descripcion:'', fileNames:[] },
+  formStep: 'input', analysis: null, ticketCode: '',
+  filterDateFrom:'', filterDateTo:'', filterPeriodo:'Mensual', filterGravedad:'Todas', filterArea:'Todas', searchQuery:''
+};
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad(n,l){ return String(n).padStart(l,'0'); }
+function sevColor(g){ return (state.meta.sevColor[g]) || state.meta.sevColor.NA; }
+function estColor(e){ return (state.meta.estColor[e]) || {bg:'oklch(94% 0.005 260)',fg:'oklch(45% 0.01 260)'}; }
+function dateOf(t){ return t.fechaIso ? new Date(t.fechaIso+'T12:00:00') : null; }
+
+async function setState(patch){ Object.assign(state, patch); render(); }
+
+// ===========================================================================
+//  Arranque
+// ===========================================================================
+async function init(){
+  try { state.meta = await API.get('/api/meta'); }
+  catch(e){ document.getElementById('app').innerHTML = '<div style="padding:40px">No se pudo conectar con el servidor: '+esc(e.message)+'</div>'; return; }
+  render();
+}
+
+// ===========================================================================
+//  Render principal
+// ===========================================================================
+function render(){
+  const app = document.getElementById('app');
+  // preservar foco/caret de inputs de texto que disparan re-render (buscador)
+  const af = document.activeElement;
+  const afFilter = af && af.getAttribute ? af.getAttribute('data-filter') : null;
+  const caret = af && typeof af.selectionStart === 'number' ? af.selectionStart : null;
+
+  let html = header();
+  if (state.mode === 'login') html += loginScreen();
+  else if (state.mode === 'ciudadano') html += citizenScreen();
+  else if (state.mode === 'admin') html += adminScreen();
+  app.innerHTML = html;
+  wire();
+
+  if (afFilter){
+    const el = app.querySelector('[data-filter="'+afFilter+'"]');
+    if (el && el.type !== 'date'){ el.focus(); try { el.setSelectionRange(caret, caret); } catch(e){} }
+  }
+}
+
+function header(){
+  let right = '<div></div>';
+  if (state.authUser){
+    const roleLabel = state.authUser.type === 'admin' ? 'Administrador municipal' : 'Cuenta ciudadana';
+    right = `<div style="display:flex; align-items:center; gap:14px;">
+      <div style="text-align:right;">
+        <div style="font-size:13px; font-weight:600;">${esc(state.authUser.nombre)}</div>
+        <div style="font-size:11px; color:oklch(55% 0.02 260);">${roleLabel} · DNI ${esc(state.authUser.dni)}</div>
+      </div>
+      <button data-act="logout" style="background:none; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:8px 14px; font-size:12.5px; font-weight:600; color:oklch(45% 0.02 260); cursor:pointer;">Cerrar sesión</button>
+    </div>`;
+  }
+  return `<header style="display:flex; align-items:center; justify-content:space-between; padding:14px 32px; background:white; border-bottom:1px solid oklch(90% 0.01 260); position:sticky; top:0; z-index:20;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:36px; height:36px; border-radius:9px; background:oklch(52% 0.15 220); display:flex; align-items:center; justify-content:center;">
+        <div style="width:14px; height:14px; border-radius:3px; background:oklch(68% 0.19 45);"></div>
+      </div>
+      <div style="font-family:'Poppins'; font-weight:700; font-size:18px; letter-spacing:-0.01em;">Municipalidad Digital</div>
+    </div>
+    ${right}
+  </header>`;
+}
+
+// ---------------------------------------------------------------------------
+//  Login
+// ---------------------------------------------------------------------------
+function loginScreen(){
+  const roleBtnBase = 'flex:1; border:none; border-radius:8px; padding:9px 0; font-size:13px; font-weight:600; cursor:pointer; background:transparent; color:oklch(45% 0.02 260);';
+  const roleBtnActive = 'flex:1; border:none; border-radius:8px; padding:9px 0; font-size:13px; font-weight:600; cursor:pointer; background:oklch(52% 0.15 220); color:white;';
+  const disabled = !/^\d{3,8}$/.test(state.loginDni.trim());
+  const btnStyle = 'border:none; border-radius:10px; padding:13px 22px; font-size:14px; font-weight:700; cursor:'+(disabled?'not-allowed':'pointer')+'; width:100%; background:'+(disabled?'oklch(90% 0.01 260)':'oklch(52% 0.15 220)')+'; color:'+(disabled?'oklch(60% 0.01 260)':'white')+';';
+  const ph = state.loginRole === 'ciudadano' ? '4000' : state.meta.adminDni;
+  const hint = state.loginRole === 'ciudadano'
+    ? 'Los ciudadanos del padrón tienen DNI desde 4000. Uno nuevo crea una cuenta vacía.'
+    : 'Cualquier DNI numérico ingresa como administrador municipal.';
+  return `<main style="flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px;">
+    <div style="width:100%; max-width:420px; background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:36px;">
+      <div style="font-family:'Poppins'; font-weight:800; font-size:22px; margin-bottom:6px;">Iniciar sesión</div>
+      <div style="color:oklch(45% 0.02 260); font-size:13.5px; margin-bottom:24px;">Accede como ciudadano para reportar incidentes, o como administrador para gestionar los reportes municipales.</div>
+      <div style="display:flex; background:oklch(96% 0.006 95); border-radius:10px; padding:4px; gap:2px; margin-bottom:20px;">
+        <button data-act="role" data-role="ciudadano" style="${state.loginRole==='ciudadano'?roleBtnActive:roleBtnBase}">Ciudadano</button>
+        <button data-act="role" data-role="admin" style="${state.loginRole==='admin'?roleBtnActive:roleBtnBase}">Administrador</button>
+      </div>
+      <div style="margin-bottom:18px;">
+        <label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">DNI</label>
+        <input id="loginDni" value="${esc(state.loginDni)}" placeholder="${esc(ph)}" maxlength="8" autocomplete="off" style="width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 12px; font-size:13px; letter-spacing:0.04em;" />
+      </div>
+      ${state.loginError?`<div style="font-size:12px; color:oklch(50% 0.18 25); margin-bottom:12px;">${esc(state.loginError)}</div>`:''}
+      <button id="loginBtn" data-act="login" ${disabled?'disabled':''} style="${btnStyle}">Ingresar</button>
+      <div style="font-size:11.5px; color:oklch(58% 0.02 260); margin-top:14px; text-align:center;">${hint}</div>
+    </div>
+  </main>`;
+}
+
+// ---------------------------------------------------------------------------
+//  Ciudadano
+// ---------------------------------------------------------------------------
+function citizenScreen(){
+  const sel = state.selectedTicket;
+  const tabActive = 'border:none; border-bottom:2px solid oklch(52% 0.15 220); padding:14px 6px; font-size:13.5px; font-weight:700; cursor:pointer; background:none; color:oklch(52% 0.15 220);';
+  const tabBase = 'border:none; border-bottom:2px solid transparent; padding:14px 6px; font-size:13.5px; font-weight:600; cursor:pointer; background:none; color:oklch(50% 0.02 260);';
+  const tabs = `<div style="display:flex; justify-content:center; gap:6px; background:white; border-bottom:1px solid oklch(90% 0.01 260); padding:0 24px;">
+    <button data-act="citTab" data-tab="nuevo" style="${state.citizenTab==='nuevo'&&!sel?tabActive:tabBase}">Nuevo reporte</button>
+    <button data-act="citTab" data-tab="mis" style="${state.citizenTab==='mis'&&!sel?tabActive:tabBase}">Mis solicitudes</button>
+  </div>`;
+
+  let body = '';
+  if (sel) body = citizenDetail(sel);
+  else if (state.citizenTab === 'nuevo') body = (state.formStep==='done') ? formDone() : formInput();
+  else body = misSolicitudes();
+
+  return tabs + `<main style="flex:1; display:flex; justify-content:center; padding:40px 20px 80px;">${body}</main>`;
+}
+
+function selectStyle(){ return 'width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 10px; font-size:13px; background:white;'; }
+function inputStyle(){ return 'width:100%; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px 12px; font-size:13px;'; }
+
+function opts(list, selected){ return list.map(o => `<option value="${esc(o)}" ${o===selected?'selected':''}>${esc(o)}</option>`).join(''); }
+
+function formInput(){
+  const f = state.form, m = state.meta;
+  const deptos = Object.keys(m.locations);
+  const provs = f.departamento ? Object.keys(m.locations[f.departamento]||{}) : [];
+  const dists = (f.departamento && f.provincia) ? (m.locations[f.departamento][f.provincia]||[]) : [];
+  const sectorOpts = m.sectores.map(s => `<option value="${esc(s.value)}" ${s.value===f.sector?'selected':''}>${esc(s.label)}</option>`).join('');
+  const analyzing = state.formStep === 'analyzing';
+  const disabled = !formValid() || analyzing;
+  const submitStyle = 'border:none; border-radius:10px; padding:14px 22px; font-size:14px; font-weight:700; cursor:'+(disabled?'not-allowed':'pointer')+'; width:100%; background:'+(disabled?'oklch(90% 0.01 260)':'oklch(68% 0.19 45)')+'; color:'+(disabled?'oklch(60% 0.01 260)':'white')+';';
+  const fileLabel = f.fileNames.length ? f.fileNames.join(', ') : 'Arrastra fotos o haz clic para adjuntar evidencia';
+
+  return `<div style="width:100%; max-width:640px;">
+    <div style="margin-bottom:24px;">
+      <div style="font-family:'Poppins'; font-weight:800; font-size:26px; margin-bottom:6px;">Reportar un incidente</div>
+      <div style="color:oklch(45% 0.02 260); font-size:14px;">Describe lo ocurrido con tus palabras — un modelo BETO clasifica automáticamente la gravedad y el área responsable.</div>
+    </div>
+    <div style="background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:32px; display:flex; flex-direction:column; gap:26px;">
+      <div>
+        <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Ubicación del incidente</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Departamento</label>
+            <select data-field="departamento" style="${selectStyle()}"><option value="">Seleccionar</option>${opts(deptos, f.departamento)}</select></div>
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Provincia</label>
+            <select data-field="provincia" style="${selectStyle()}"><option value="">Seleccionar</option>${opts(provs, f.provincia)}</select></div>
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Distrito</label>
+            <select data-field="distrito" style="${selectStyle()}"><option value="">Seleccionar</option>${opts(dists, f.distrito)}</select></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Datos de contacto</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Nombres y apellidos</label>
+            <input data-field="nombres" value="${esc(f.nombres)}" placeholder="Ej. María Torres Quispe" style="${inputStyle()}" /></div>
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Sector</label>
+            <select data-field="sector" style="${selectStyle()}"><option value="">Seleccionar</option>${sectorOpts}</select></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Correo electrónico</label>
+            <input data-field="correo" value="${esc(f.correo)}" placeholder="nombre@correo.com" style="${inputStyle()}" /></div>
+          <div><label style="font-size:12px; color:oklch(45% 0.02 260); display:block; margin-bottom:5px;">Celular</label>
+            <input data-field="celular" value="${esc(f.celular)}" placeholder="9XXXXXXXX" style="${inputStyle()}" /></div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220);">Descripción del incidente</div>
+          <div style="font-size:11px; color:oklch(60% 0.02 260);"><span id="descCount">${f.descripcion.length}</span>/500</div>
+        </div>
+        <textarea data-field="descripcion" placeholder="Describe qué ocurrió, dónde y cuándo. Este texto es analizado por el modelo BETO para asignar gravedad y área." style="width:100%; min-height:110px; border:1px solid oklch(88% 0.01 260); border-radius:10px; padding:12px 14px; font-size:14px; resize:vertical; outline:none;">${esc(f.descripcion)}</textarea>
+        <div style="font-size:11px; color:oklch(55% 0.02 260); margin-top:6px;">Campo usado por el motor de NLP para clasificar gravedad y derivar al área correspondiente.</div>
+      </div>
+      <div>
+        <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(52% 0.15 220); margin-bottom:12px;">Evidencia (opcional)</div>
+        <label style="display:flex; align-items:center; justify-content:center; gap:10px; border:1.5px dashed oklch(85% 0.01 260); border-radius:12px; padding:18px; cursor:pointer; color:oklch(45% 0.02 260); font-size:13px;">
+          <input type="file" accept="image/*" multiple data-field="file" style="display:none;" />
+          <span id="fileLabel">${esc(fileLabel)}</span>
+        </label>
+      </div>
+      ${analyzing?`<div style="display:flex; align-items:center; gap:10px; background:oklch(96% 0.03 220); border-radius:10px; padding:12px 16px; font-size:13px; color:oklch(40% 0.1 220); font-weight:500;">
+        <div style="width:16px; height:16px; border-radius:50%; border:2px solid oklch(75% 0.05 220); border-top-color:oklch(52% 0.15 220); animation:spin 0.8s linear infinite;"></div>
+        Analizando descripción con el modelo BETO para clasificar gravedad y área…</div>`:''}
+      <button id="submitBtn" data-act="submit" ${disabled?'disabled':''} style="${submitStyle}">${analyzing?'Analizando…':'Enviar reporte'}</button>
+    </div>
+  </div>`;
+}
+
+function formValid(){
+  const f = state.form;
+  return !!(f.departamento && f.provincia && f.distrito && f.nombres.trim() &&
+    /\S+@\S+\.\S+/.test(f.correo) && /^9\d{8}$/.test(f.celular) && f.sector && f.descripcion.trim().length >= 10);
+}
+
+function formDone(){
+  const a = state.analysis;
+  const sc = sevColor(a.gravedad);
+  const kws = a.keywords.map(k => `<span style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:4px 10px; font-size:12px; color:oklch(35% 0.02 260);">${esc(k)}</span>`).join('');
+  const backendLabel = a.backend === 'beto' ? 'Modelo BETO' : 'Clasificador por reglas';
+  return `<div style="width:100%; max-width:620px; background:white; border-radius:18px; border:1px solid oklch(90% 0.01 260); padding:40px; text-align:center;">
+    <div style="width:56px; height:56px; border-radius:50%; background:oklch(94% 0.05 145); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;">
+      <div style="width:22px; height:22px; border-radius:50%; background:oklch(60% 0.15 145);"></div></div>
+    <div style="font-family:'Poppins'; font-weight:700; font-size:22px; margin-bottom:6px;">Reporte registrado</div>
+    <div style="color:oklch(45% 0.02 260); font-size:14px; margin-bottom:24px;">Tu código de seguimiento es</div>
+    <div style="font-family:'Poppins'; font-weight:800; font-size:28px; color:oklch(52% 0.15 220); letter-spacing:0.02em; margin-bottom:28px;">${esc(state.ticketCode)}</div>
+    <div style="background:oklch(97% 0.005 95); border-radius:14px; padding:20px; text-align:left; margin-bottom:8px;">
+      <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación automática · ${backendLabel}</div>
+      <div style="display:flex; gap:24px; margin-bottom:16px;">
+        <div style="flex:1;"><div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Gravedad</div>
+          <div style="display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; background:${sc.bg}; color:${sc.fg}; font-weight:700; font-size:13px;">${esc(a.gravedad)}</div></div>
+        <div style="flex:1;"><div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Área asignada</div>
+          <div style="font-weight:600; font-size:13px;">${esc(a.area)}</div></div>
+        <div style="flex:1;"><div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:4px;">Confianza del modelo</div>
+          <div style="font-weight:600; font-size:13px;">${esc(a.confidence)}%</div></div>
+      </div>
+      <div style="font-size:12px; color:oklch(45% 0.02 260); margin-bottom:8px;">Palabras clave detectadas</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">${kws}</div>
+    </div>
+    <button data-act="resetForm" style="margin-top:24px; background:oklch(52% 0.15 220); color:white; border:none; border-radius:10px; padding:13px 22px; font-size:14px; font-weight:600; cursor:pointer; width:100%;">Registrar otro reporte</button>
+  </div>`;
+}
+
+function misSolicitudes(){
+  const rows = state.myTickets.map((t,i) => {
+    const sc = sevColor(t.gravedad), ec = estColor(t.estado);
+    const corta = t.descripcion.length>70 ? t.descripcion.slice(0,70)+'…' : t.descripcion;
+    return `<tr class="rowlink" data-act="openMy" data-i="${i}" style="border-bottom:1px solid oklch(95% 0.005 95); cursor:pointer;">
+      <td style="padding:11px 16px; font-weight:600; font-family:monospace;">${esc(t.codigo)}</td>
+      <td style="padding:11px 16px; color:oklch(45% 0.02 260);">${esc(t.fechaFmt)}</td>
+      <td style="padding:11px 16px; color:oklch(45% 0.02 260); max-width:260px;">${esc(corta)}</td>
+      <td style="padding:11px 16px;">${esc(t.area)}</td>
+      <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:${sc.bg}; color:${sc.fg}; font-weight:700; font-size:11px;">${esc(t.gravedad)}</span></td>
+      <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:${ec.bg}; color:${ec.fg}; font-weight:600; font-size:11px;">${esc(t.estado)}</span></td>
+    </tr>`;
+  }).join('');
+  const th = ['Código','Fecha','Descripción','Área','Gravedad','Estado'].map(h=>`<th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">${h}</th>`).join('');
+  return `<div style="width:100%; max-width:900px;">
+    <div style="font-family:'Poppins'; font-weight:700; font-size:20px; margin-bottom:14px;">Mis solicitudes</div>
+    <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; overflow:hidden;">
+      <div style="padding:14px 18px; border-bottom:1px solid oklch(93% 0.01 260); font-size:12.5px; color:oklch(50% 0.02 260);">${state.myTickets.length} solicitudes registradas con esta cuenta</div>
+      <div style="max-height:520px; overflow-y:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+          <thead><tr style="position:sticky; top:0; background:oklch(97% 0.005 95); text-align:left;">${th}</tr></thead>
+          <tbody>${rows||`<tr><td colspan="6" style="padding:26px 16px; text-align:center; color:oklch(55% 0.02 260);">Aún no tienes solicitudes registradas. Crea una en “Nuevo reporte”.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function citizenDetail(t){
+  const sc = sevColor(t.gravedad), ec = estColor(t.estado);
+  const contact = (state.meta.contacts[t.area]) || {correo:'—', telefono:'—'};
+  return `<div style="width:100%; max-width:900px;">
+    <button data-act="closeDetail" style="background:none; border:none; color:oklch(52% 0.15 220); font-size:13px; font-weight:600; cursor:pointer; padding:0 0 16px; display:flex; align-items:center; gap:4px;">← Volver a mis solicitudes</button>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+      <div><div style="font-family:'Poppins'; font-weight:700; font-size:22px;">${esc(t.codigo)}</div>
+        <div style="font-size:13px; color:oklch(45% 0.02 260);">Registrado el ${esc(t.fechaFmt)}</div></div>
+      <div style="display:inline-flex; padding:6px 14px; border-radius:14px; background:${ec.bg}; color:${ec.fg}; font-weight:700; font-size:13px;">${esc(t.estado)}</div>
+    </div>
+    <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:20px;">
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:24px;">
+        <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:16px;">Datos del reporte</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; font-size:13px; margin-bottom:18px;">
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Sector</div><div style="font-weight:600;">${esc(t.sector)}</div></div>
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ubicación</div><div style="font-weight:600;">${esc(t.ubicacion)}</div></div>
+        </div>
+        <div style="color:oklch(55% 0.02 260); font-size:13px; margin-bottom:4px;">Descripción del incidente</div>
+        <div style="background:oklch(97% 0.005 95); border-radius:10px; padding:14px; font-size:13px; line-height:1.5;">${esc(t.descripcion)}</div>
+        <div style="margin-top:16px; color:oklch(55% 0.02 260); font-size:13px; margin-bottom:6px;">Evidencia adjunta</div>
+        <div style="border:1.5px dashed oklch(85% 0.01 260); border-radius:10px; padding:16px; font-size:12px; color:oklch(55% 0.02 260); font-family:monospace; text-align:center;">${esc(t.evidenciaLabel)}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación NLP</div>
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+              <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Gravedad</div>
+              <div style="display:inline-flex; padding:4px 10px; border-radius:14px; background:${sc.bg}; color:${sc.fg}; font-weight:700; font-size:12px;">${esc(t.gravedad)}</div></div>
+            <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+              <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Área derivada</div>
+              <div style="font-weight:600; font-size:12px;">${esc(t.area)}</div></div>
+          </div>
+        </div>
+        <div style="background:oklch(96% 0.03 220); border:1px solid oklch(90% 0.05 220); border-radius:16px; padding:22px;">
+          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(40% 0.12 220); margin-bottom:12px;">Contacto de seguimiento</div>
+          <div style="font-size:12.5px; color:oklch(35% 0.05 220); margin-bottom:10px;">El área <strong>${esc(t.area)}</strong> está a cargo de tu solicitud. Puedes comunicarte por estos medios para conocer el avance.</div>
+          <div style="font-size:13px; margin-bottom:6px;"><span style="color:oklch(45% 0.02 260);">Correo:</span> <strong>${esc(contact.correo)}</strong></div>
+          <div style="font-size:13px;"><span style="color:oklch(45% 0.02 260);">Teléfono:</span> <strong>${esc(contact.telefono)}</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+//  Admin
+// ---------------------------------------------------------------------------
+function adminScreen(){
+  const sel = state.selectedTicket;
+  const sideBtn = (tab,label) => {
+    const active = state.adminTab===tab && !sel;
+    return `<button data-act="adminTab" data-tab="${tab}" style="text-align:left; border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:600; cursor:pointer; background:${active?'oklch(95% 0.03 220)':'transparent'}; color:${active?'oklch(45% 0.12 220)':'oklch(45% 0.02 260)'};">${label}</button>`;
+  };
+  let content = sel ? adminDetail(sel) : (state.adminTab==='dashboard' ? dashboard() : ticketsTab());
+  return `<div style="flex:1; display:flex;">
+    <nav style="width:200px; background:white; border-right:1px solid oklch(90% 0.01 260); padding:24px 14px; display:flex; flex-direction:column; gap:4px;">
+      ${sideBtn('dashboard','Dashboard')}${sideBtn('tickets','Tickets')}
+    </nav>
+    <div style="flex:1; padding:28px 32px 60px; overflow-y:auto; max-height:calc(100vh - 62px);">${content}</div>
+  </div>`;
+}
+
+function applyFilters(list){
+  const {filterDateFrom, filterDateTo, filterGravedad, filterArea} = state;
+  return list.filter(t => {
+    const d = dateOf(t);
+    if (filterDateFrom && (!d || d < new Date(filterDateFrom+'T00:00:00'))) return false;
+    if (filterDateTo && (!d || d > new Date(filterDateTo+'T23:59:59'))) return false;
+    if (filterGravedad!=='Todas' && t.gravedad!==filterGravedad) return false;
+    if (filterArea!=='Todas' && t.area!==filterArea) return false;
+    return true;
+  });
+}
+
+function bucketFor(date, periodo){
+  const y=date.getFullYear(), m=date.getMonth();
+  if (periodo==='Diario'){ return {key:y+'-'+pad(m+1,2)+'-'+pad(date.getDate(),2), label:pad(date.getDate(),2)+'/'+pad(m+1,2), sort:date.getTime()}; }
+  if (periodo==='Trimestral'){ const q=Math.floor(m/3)+1; return {key:y+'-Q'+q, label:'T'+q+' '+String(y).slice(2), sort:y*10+q}; }
+  if (periodo==='Anual'){ return {key:String(y), label:String(y), sort:y}; }
+  const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return {key:y+'-'+pad(m+1,2), label:meses[m]+' '+String(y).slice(2), sort:y*12+m};
+}
+
+function filtersBar(){
+  const m = state.meta;
+  const fi = 'border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:8px 10px; font-size:12.5px; background:white;';
+  const isDash = state.adminTab==='dashboard';
+  const isTick = state.adminTab==='tickets';
+  const periodoSel = isDash ? `<div><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Periodo</label>
+    <select data-filter="filterPeriodo" style="${fi}">${opts(['Diario','Mensual','Trimestral','Anual'], state.filterPeriodo)}</select></div>` : '';
+  const searchBox = isTick ? `<div style="flex:1; min-width:180px;"><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Buscar por código o nombre</label>
+    <input data-filter="searchQuery" value="${esc(state.searchQuery)}" placeholder="TCK-2026-00012 / María Torres" style="${fi} width:100%;" /></div>` : '';
+  return `<div style="display:flex; gap:12px; align-items:flex-end; margin-bottom:20px; flex-wrap:wrap; background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:14px 18px;">
+    <div><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Desde</label><input type="date" data-filter="filterDateFrom" value="${esc(state.filterDateFrom)}" style="${fi}" /></div>
+    <div><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Hasta</label><input type="date" data-filter="filterDateTo" value="${esc(state.filterDateTo)}" style="${fi}" /></div>
+    ${periodoSel}
+    <div><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Gravedad</label>
+      <select data-filter="filterGravedad" style="${fi}">${opts(['Todas',...m.gravedades], state.filterGravedad)}</select></div>
+    <div><label style="font-size:11px; color:oklch(55% 0.02 260); display:block; margin-bottom:3px;">Área</label>
+      <select data-filter="filterArea" style="${fi}">${opts(['Todas',...m.areas], state.filterArea)}</select></div>
+    ${searchBox}
+    <button data-act="clearFilters" style="margin-left:auto; background:none; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:9px 14px; font-size:12px; color:oklch(45% 0.02 260); cursor:pointer;">Limpiar filtros</button>
+  </div>`;
+}
+
+function dashboard(){
+  const filtered = applyFilters(state.allTickets);
+  const m = state.meta;
+
+  // Ranking de áreas
+  const areaCounts = {}; m.areas.forEach(a=>areaCounts[a]=0);
+  filtered.forEach(t=>areaCounts[t.area]=(areaCounts[t.area]||0)+1);
+  const maxArea = Math.max(1, ...Object.values(areaCounts));
+  const rankingBars = m.areas.map(a=>({area:a,count:areaCounts[a]})).sort((a,b)=>b.count-a.count)
+    .map((r,i)=>({rank:i+1,area:r.area,count:r.count,widthPct:Math.round(r.count/maxArea*100)+'%'}));
+
+  // Buckets temporales
+  const bucketMap={};
+  filtered.forEach(t=>{ const d=dateOf(t); if(!d)return; const b=bucketFor(d,state.filterPeriodo);
+    if(!bucketMap[b.key]) bucketMap[b.key]={label:b.label,sort:b.sort,total:0,Baja:0,Media:0,Alta:0,NA:0};
+    bucketMap[b.key].total++; bucketMap[b.key][t.gravedad]=(bucketMap[b.key][t.gravedad]||0)+1; });
+  let buckets=Object.values(bucketMap).sort((a,b)=>a.sort-b.sort);
+  if(buckets.length>10) buckets=buckets.slice(buckets.length-10);
+  if(buckets.length===0) buckets=[{label:'—',total:0,Baja:0,Media:0,Alta:0,NA:0}];
+
+  // Línea + tendencia
+  const cW=640,cH=220,pL=10,pR=10,pT=20,pB=10;
+  const maxTotal=Math.max(1,...buckets.map(b=>b.total));
+  const stepX=buckets.length>1?(cW-pL-pR)/(buckets.length-1):0;
+  const pts=buckets.map((b,i)=>({x:pL+i*stepX,y:pT+(cH-pT-pB)*(1-b.total/maxTotal)}));
+  const linePath=pts.map((p,i)=>(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+  const areaPath=pts.length?linePath+' L'+pts[pts.length-1].x.toFixed(1)+','+(cH-pB)+' L'+pts[0].x.toFixed(1)+','+(cH-pB)+' Z':'';
+  let trendPath=''; const n=pts.length;
+  if(n>1){ const xs=buckets.map((_,i)=>i),ys=buckets.map(b=>b.total);
+    const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n; let num=0,den=0;
+    for(let i=0;i<n;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)**2;}
+    const slope=den?num/den:0,inter=my-slope*mx;
+    const y0=inter,y1=inter+slope*(n-1);
+    const py0=pT+(cH-pT-pB)*(1-Math.max(0,y0)/maxTotal), py1=pT+(cH-pT-pB)*(1-Math.max(0,y1)/maxTotal);
+    trendPath='M'+pL+','+py0.toFixed(1)+' L'+(pL+stepX*(n-1)).toFixed(1)+','+py1.toFixed(1); }
+  const gridLines=[pT,pT+(cH-pT-pB)*0.33,pT+(cH-pT-pB)*0.66,cH-pB];
+  const circles=pts.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="oklch(52% 0.15 220)"></circle>`).join('');
+  const gl=gridLines.map(y=>`<line x1="0" x2="640" y1="${y}" y2="${y}" stroke="oklch(93% 0.005 95)" stroke-width="1"></line>`).join('');
+  const labels=buckets.map(b=>`<div>${esc(b.label)}</div>`).join('');
+
+  // Barras apiladas
+  const sw=640,sh=200,sB=16,sT=8; const maxStack=Math.max(1,...buckets.map(b=>b.total));
+  const barW=Math.min(48,(sw-20)/buckets.length-10); const gap=(sw-barW*buckets.length)/(buckets.length+1);
+  const order=['Baja','Media','Alta','NA']; let segs='';
+  buckets.forEach((b,i)=>{ let yc=sh-sB; const x=gap+i*(barW+gap);
+    order.forEach(g=>{ const val=b[g]||0; const h=(sh-sT-sB)*(val/maxStack);
+      if(h>0){ yc-=h; segs+=`<rect x="${x}" y="${yc}" width="${barW}" height="${h}" fill="${sevColor(g).dot}" rx="2"></rect>`; } }); });
+  const legend=order.map(g=>`<div style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:oklch(40% 0.02 260);"><div style="width:9px; height:9px; border-radius:2px; background:${sevColor(g).dot};"></div>${g}</div>`).join('');
+
+  // Mapa
+  const deptCounts={}; filtered.forEach(t=>{deptCounts[t.departamento]=(deptCounts[t.departamento]||0)+1;});
+  const maxDept=Math.max(1,...Object.values(deptCounts),0);
+  const dots=Object.keys(m.deptMapPos).map(d=>{ const count=deptCounts[d]||0; const sev={};
+    filtered.filter(t=>t.departamento===d).forEach(t=>{sev[t.gravedad]=(sev[t.gravedad]||0)+1;});
+    const dom=Object.keys(sev).sort((a,b)=>sev[b]-sev[a])[0]||'NA';
+    return {dept:d,count,x:m.deptMapPos[d].x,y:m.deptMapPos[d].y,size:18+Math.round(28*Math.sqrt(count/maxDept)),color:sevColor(dom).dot}; });
+  const mapDots=dots.map(md=>`<div style="position:absolute; left:${md.x}%; top:${md.y}%; width:${md.size}px; height:${md.size}px; border-radius:50%; background:${md.color}; opacity:0.75; transform:translate(-50%,-50%); display:flex; align-items:center; justify-content:center; font-size:9px; color:white; font-weight:700;">${md.count||''}</div>`).join('');
+  const mapLegend=[...dots].sort((a,b)=>b.count-a.count).map(md=>`<div style="display:flex; justify-content:space-between; font-size:11px; color:oklch(40% 0.02 260);"><span>${esc(md.dept)}</span><span style="font-weight:600;">${md.count}</span></div>`).join('');
+
+  // KPIs
+  const total=filtered.length;
+  const altaPct=total?Math.round(filtered.filter(t=>t.gravedad==='Alta').length/total*100):0;
+  const cerradoPct=total?Math.round(filtered.filter(t=>t.estado==='Cerrado').length/total*100):0;
+  const tiempo=(2.2+(altaPct/100)*1.6).toFixed(1)+' días';
+  const kpi=(label,val,color)=>`<div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:14px; padding:18px;">
+    <div style="font-size:12px; color:oklch(50% 0.02 260); margin-bottom:6px;">${label}</div>
+    <div style="font-family:'Poppins'; font-weight:700; font-size:26px; ${color?'color:'+color:''}">${val}</div></div>`;
+  const rankHtml=rankingBars.map(rb=>`<div><div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:3px;"><span>${rb.rank}. ${esc(rb.area)}</span><span style="font-weight:700;">${rb.count}</span></div>
+    <div style="height:8px; background:oklch(95% 0.005 95); border-radius:4px; overflow:hidden;"><div style="height:100%; background:oklch(52% 0.15 220); width:${rb.widthPct};"></div></div></div>`).join('');
+
+  return filtersBar() + `<div>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;">
+      ${kpi('Total de reportes',total)}${kpi('Gravedad alta',altaPct+'%','oklch(60% 0.2 35)')}${kpi('Cerrados',cerradoPct+'%','oklch(60% 0.15 145)')}${kpi('Tiempo prom. de atención',tiempo)}
+    </div>
+    <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:16px;">
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Incidentes por periodo (con línea de tendencia)</div>
+        <svg viewBox="0 0 640 220" style="width:100%; height:220px;">${gl}
+          <path d="${areaPath}" fill="oklch(93% 0.04 220)" stroke="none"></path>
+          <path d="${linePath}" fill="none" stroke="oklch(52% 0.15 220)" stroke-width="2.5"></path>
+          <path d="${trendPath}" fill="none" stroke="oklch(68% 0.19 45)" stroke-width="2" stroke-dasharray="6,4"></path>${circles}</svg>
+        <div style="display:flex; justify-content:space-between; font-size:10.5px; color:oklch(55% 0.02 260); margin-top:2px;">${labels}</div>
+      </div>
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Ranking de áreas derivadas</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">${rankHtml}</div>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:16px;">
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:14px;">Incidentes por gravedad y periodo (barras apiladas)</div>
+        <svg viewBox="0 0 640 200" style="width:100%; height:200px;">${segs}</svg>
+        <div style="display:flex; justify-content:space-between; font-size:10.5px; color:oklch(55% 0.02 260); margin-top:2px;">${labels}</div>
+        <div style="display:flex; gap:14px; margin-top:12px;">${legend}</div>
+      </div>
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:20px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:4px;">Zonas con más incidentes</div>
+        <div style="font-size:10.5px; color:oklch(55% 0.02 260); margin-bottom:10px; font-family:monospace;">MAPA REFERENCIAL — no georreferenciado a escala</div>
+        <div style="position:relative; width:100%; height:190px; background:oklch(97% 0.008 200); border-radius:10px; overflow:hidden; background-image:linear-gradient(oklch(93% 0.005 95) 1px, transparent 1px), linear-gradient(90deg, oklch(93% 0.005 95) 1px, transparent 1px); background-size:20px 20px;">${mapDots}</div>
+        <div style="display:flex; flex-direction:column; gap:4px; margin-top:10px;">${mapLegend}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function ticketsTab(){
+  const filtered = applyFilters(state.allTickets);
+  const q = state.searchQuery.trim().toLowerCase();
+  const rows = filtered.filter(t=>!q||t.codigo.toLowerCase().includes(q)||t.nombre.toLowerCase().includes(q))
+    .slice(0,120);
+  const trs = rows.map((t)=>{
+    const sc=sevColor(t.gravedad), ec=estColor(t.estado);
+    return `<tr class="rowlink" data-act="openTicket" data-cod="${esc(t.codigo)}" style="border-bottom:1px solid oklch(95% 0.005 95); cursor:pointer;">
+      <td style="padding:11px 16px; font-weight:600; font-family:monospace;">${esc(t.codigo)}</td>
+      <td style="padding:11px 16px; color:oklch(45% 0.02 260);">${esc(t.fechaFmt)}</td>
+      <td style="padding:11px 16px;">${esc(t.nombre)}</td>
+      <td style="padding:11px 16px; color:oklch(45% 0.02 260);">${esc(t.ubicacion)}</td>
+      <td style="padding:11px 16px; color:oklch(45% 0.02 260);">${esc(t.sector)}</td>
+      <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:${sc.bg}; color:${sc.fg}; font-weight:700; font-size:11px;">${esc(t.gravedad)}</span></td>
+      <td style="padding:11px 16px;">${esc(t.area)}</td>
+      <td style="padding:11px 16px;"><span style="display:inline-flex; padding:3px 10px; border-radius:12px; background:${ec.bg}; color:${ec.fg}; font-weight:600; font-size:11px;">${esc(t.estado)}</span></td>
+    </tr>`;
+  }).join('');
+  const th=['Código','Fecha','Ciudadano','Ubicación','Sector','Gravedad','Área','Estado'].map(h=>`<th style="padding:10px 16px; font-weight:600; color:oklch(45% 0.02 260);">${h}</th>`).join('');
+  return filtersBar() + `<div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; overflow:hidden;">
+    <div style="padding:14px 18px; border-bottom:1px solid oklch(93% 0.01 260); font-size:12.5px; color:oklch(50% 0.02 260);">Mostrando ${rows.length} de ${state.allTickets.length} tickets</div>
+    <div style="max-height:560px; overflow-y:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <thead><tr style="position:sticky; top:0; background:oklch(97% 0.005 95); text-align:left; z-index:1;">${th}</tr></thead>
+        <tbody>${trs||`<tr><td colspan="8" style="padding:26px 16px; text-align:center; color:oklch(55% 0.02 260);">No hay tickets que coincidan con los filtros.</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function adminDetail(t){
+  const sc=sevColor(t.gravedad);
+  const conf = (t.confianza!=null) ? t.confianza : null;
+  const estadoSel = state.meta.estados.map(e=>`<option value="${esc(e)}" ${e===t.estado?'selected':''}>${esc(e)}</option>`).join('');
+  return `<div>
+    <button data-act="closeDetail" style="background:none; border:none; color:oklch(52% 0.15 220); font-size:13px; font-weight:600; cursor:pointer; padding:0 0 16px; display:flex; align-items:center; gap:4px;">← Volver a tickets</button>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+      <div><div style="font-family:'Poppins'; font-weight:700; font-size:22px;">${esc(t.codigo)}</div>
+        <div style="font-size:13px; color:oklch(45% 0.02 260);">Registrado el ${esc(t.fechaFmt)}</div></div>
+      <select data-act="estado" style="border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:9px 12px; font-size:13px; font-weight:600;">${estadoSel}</select>
+    </div>
+    <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:20px;">
+      <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:24px;">
+        <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:16px;">Datos del reporte</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; font-size:13px; margin-bottom:18px;">
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ciudadano</div><div style="font-weight:600;">${esc(t.nombre)}</div></div>
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Sector</div><div style="font-weight:600;">${esc(t.sector)}</div></div>
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Correo</div><div style="font-weight:600;">${esc(t.correo)}</div></div>
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Celular</div><div style="font-weight:600;">${esc(t.celular)}</div></div>
+          <div><div style="color:oklch(55% 0.02 260); margin-bottom:2px;">Ubicación</div><div style="font-weight:600;">${esc(t.ubicacion)}</div></div>
+        </div>
+        <div style="color:oklch(55% 0.02 260); font-size:13px; margin-bottom:4px;">Descripción del incidente</div>
+        <div style="background:oklch(97% 0.005 95); border-radius:10px; padding:14px; font-size:13px; line-height:1.5;">${esc(t.descripcion)}</div>
+        <div style="margin-top:16px; color:oklch(55% 0.02 260); font-size:13px; margin-bottom:6px;">Evidencia adjunta</div>
+        <div style="border:1.5px dashed oklch(85% 0.01 260); border-radius:10px; padding:16px; font-size:12px; color:oklch(55% 0.02 260); font-family:monospace; text-align:center;">${esc(t.evidenciaLabel)}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:14px;">Clasificación NLP</div>
+          <div style="display:flex; gap:10px; margin-bottom:14px;">
+            <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+              <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Gravedad</div>
+              <div style="display:inline-flex; padding:4px 10px; border-radius:14px; background:${sc.bg}; color:${sc.fg}; font-weight:700; font-size:12px;">${esc(t.gravedad)}</div></div>
+            <div style="flex:1; background:oklch(97% 0.005 95); border-radius:10px; padding:12px;">
+              <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:4px;">Área derivada</div>
+              <div style="font-weight:600; font-size:12px;">${esc(t.area)}</div></div>
+          </div>
+          <div style="font-size:11px; color:oklch(55% 0.02 260); margin-bottom:6px;">Confianza del modelo: ${conf!=null?conf+'%':'—'}</div>
+          <div style="height:6px; background:oklch(93% 0.01 260); border-radius:4px; overflow:hidden;"><div style="height:100%; background:oklch(52% 0.15 220); width:${conf!=null?conf+'%':'0%'};"></div></div>
+        </div>
+        <div style="background:white; border:1px solid oklch(90% 0.01 260); border-radius:16px; padding:22px;">
+          <div style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:oklch(45% 0.02 260); margin-bottom:10px;">Notas internas</div>
+          <textarea placeholder="Agregar seguimiento interno del área responsable…" style="width:100%; min-height:90px; border:1px solid oklch(88% 0.01 260); border-radius:8px; padding:10px; font-size:13px; resize:vertical;"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ===========================================================================
+//  Wiring de eventos
+// ===========================================================================
+function wire(){
+  const app = document.getElementById('app');
+
+  // Botones / clicks con data-act
+  app.querySelectorAll('[data-act]').forEach(el => {
+    const act = el.getAttribute('data-act');
+    if (['estado'].includes(act)) return; // se maneja con change abajo
+    el.addEventListener('click', ev => handleAct(act, el, ev));
+  });
+
+  // Login DNI (sin re-render para no perder foco)
+  const dni = document.getElementById('loginDni');
+  if (dni){
+    dni.addEventListener('input', e => {
+      state.loginDni = e.target.value.replace(/\D/g,'').slice(0,8);
+      const disabled = !/^\d{3,8}$/.test(state.loginDni.trim());
+      const btn = document.getElementById('loginBtn');
+      if (btn){ btn.disabled = disabled;
+        btn.style.background = disabled?'oklch(90% 0.01 260)':'oklch(52% 0.15 220)';
+        btn.style.color = disabled?'oklch(60% 0.01 260)':'white';
+        btn.style.cursor = disabled?'not-allowed':'pointer'; }
+    });
+    dni.addEventListener('keydown', e => { if(e.key==='Enter') handleAct('login'); });
+  }
+
+  // Campos del formulario ciudadano
+  app.querySelectorAll('[data-field]').forEach(el => {
+    const field = el.getAttribute('data-field');
+    if (field === 'file'){
+      el.addEventListener('change', e => {
+        state.form.fileNames = Array.from(e.target.files||[]).map(f=>f.name);
+        const lbl = document.getElementById('fileLabel');
+        if (lbl) lbl.textContent = state.form.fileNames.length ? state.form.fileNames.join(', ') : 'Arrastra fotos o haz clic para adjuntar evidencia';
+      });
+    } else if (['departamento','provincia','distrito','sector'].includes(field)){
+      el.addEventListener('change', e => {
+        if (field==='departamento'){ state.form.departamento=e.target.value; state.form.provincia=''; state.form.distrito=''; }
+        else if (field==='provincia'){ state.form.provincia=e.target.value; state.form.distrito=''; }
+        else state.form[field]=e.target.value;
+        render(); // re-render por cascada / validación
+      });
+    } else {
+      // inputs de texto: actualizar en silencio
+      el.addEventListener('input', e => {
+        let v = e.target.value;
+        if (field==='celular') v = v.replace(/\D/g,'').slice(0,9);
+        if (field==='descripcion') v = v.slice(0,500);
+        state.form[field] = v;
+        if (field==='descripcion'){ const c=document.getElementById('descCount'); if(c) c.textContent=v.length; }
+        if (field==='celular' && e.target.value!==v) e.target.value=v;
+        refreshSubmit();
+      });
+    }
+  });
+
+  // Filtros admin
+  app.querySelectorAll('[data-filter]').forEach(el => {
+    const key = el.getAttribute('data-filter');
+    const evt = (el.tagName==='SELECT'||el.type==='date') ? 'change' : 'input';
+    el.addEventListener(evt, e => {
+      state[key] = e.target.value;
+      if (evt==='change') render();
+      else { clearTimeout(window.__st); window.__st=setTimeout(render, 200); }
+    });
+  });
+
+  // Estado (admin detalle)
+  const estadoSel = app.querySelector('[data-act="estado"]');
+  if (estadoSel) estadoSel.addEventListener('change', e => cambiarEstado(e.target.value));
+}
+
+function refreshSubmit(){
+  const btn = document.getElementById('submitBtn');
+  if (!btn) return;
+  const disabled = !formValid() || state.formStep==='analyzing';
+  btn.disabled = disabled;
+  btn.style.background = disabled?'oklch(90% 0.01 260)':'oklch(68% 0.19 45)';
+  btn.style.color = disabled?'oklch(60% 0.01 260)':'white';
+  btn.style.cursor = disabled?'not-allowed':'pointer';
+}
+
+// ===========================================================================
+//  Acciones
+// ===========================================================================
+async function handleAct(act, el, ev){
+  switch(act){
+    case 'role': state.loginRole = el.getAttribute('data-role'); state.loginError=''; render(); break;
+    case 'login': await doLogin(); break;
+    case 'logout':
+      Object.assign(state, {mode:'login', authUser:null, selectedTicket:null, loginDni:'', allTickets:[], myTickets:[],
+        form:{departamento:'',provincia:'',distrito:'',nombres:'',correo:'',celular:'',sector:'',descripcion:'',fileNames:[]}, formStep:'input'});
+      render(); break;
+    case 'citTab': state.citizenTab = el.getAttribute('data-tab'); state.selectedTicket=null; render(); break;
+    case 'adminTab': state.adminTab = el.getAttribute('data-tab'); state.selectedTicket=null; render(); break;
+    case 'submit': await doSubmit(); break;
+    case 'resetForm':
+      state.formStep='input'; state.analysis=null;
+      state.form={departamento:'',provincia:'',distrito:'',nombres:state.authUser?state.authUser.nombre:'',correo:'',celular:'',sector:'',descripcion:'',fileNames:[]};
+      render(); break;
+    case 'openMy': state.selectedTicket = state.myTickets[+el.getAttribute('data-i')]; render(); break;
+    case 'openTicket': state.selectedTicket = state.allTickets.find(t=>t.codigo===el.getAttribute('data-cod')); render(); break;
+    case 'closeDetail': state.selectedTicket=null; render(); break;
+    case 'clearFilters': Object.assign(state,{filterDateFrom:'',filterDateTo:'',filterGravedad:'Todas',filterArea:'Todas',searchQuery:''}); render(); break;
+  }
+}
+
+async function doLogin(){
+  const disabled = !/^\d{3,8}$/.test(state.loginDni.trim());
+  if (disabled) return;
+  try {
+    const user = await API.post('/api/login', {dni: state.loginDni.trim(), role: state.loginRole});
+    state.authUser = user;
+    state.selectedTicket = null;
+    if (user.type === 'admin'){
+      state.mode='admin'; state.adminTab='dashboard';
+      state.allTickets = await API.get('/api/tickets');
+    } else {
+      state.mode='ciudadano'; state.citizenTab='nuevo'; state.formStep='input';
+      state.form.nombres = user.nombre;
+      state.myTickets = await API.get('/api/tickets?owner_dni='+encodeURIComponent(user.dni));
+    }
+    render();
+  } catch(e){ state.loginError = e.message; render(); }
+}
+
+async function doSubmit(){
+  if (!formValid() || state.formStep==='analyzing') return;
+  state.formStep='analyzing'; render();
+  try {
+    const f = state.form;
+    const res = await API.post('/api/reports', {
+      descripcion:f.descripcion, nombres:f.nombres, correo:f.correo, celular:f.celular,
+      sector:f.sector, departamento:f.departamento, provincia:f.provincia, distrito:f.distrito,
+      dni: state.authUser.dni, fileNames:f.fileNames
+    });
+    state.analysis = res.analysis;
+    state.ticketCode = res.ticket.codigo;
+    state.formStep = 'done';
+    // refrescar listados
+    state.myTickets = await API.get('/api/tickets?owner_dni='+encodeURIComponent(state.authUser.dni));
+    render();
+  } catch(e){ alert('No se pudo registrar el reporte: '+e.message); state.formStep='input'; render(); }
+}
+
+async function cambiarEstado(nuevo){
+  const t = state.selectedTicket; if(!t) return;
+  try {
+    await API.patch('/api/tickets/'+encodeURIComponent(t.codigo)+'/estado', {estado:nuevo});
+    t.estado = nuevo;
+    const inList = state.allTickets.find(x=>x.codigo===t.codigo); if(inList) inList.estado=nuevo;
+    render();
+  } catch(e){ alert('No se pudo actualizar el estado: '+e.message); }
+}
+
+init();
+</script>
+</body>
+</html>
